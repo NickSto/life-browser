@@ -1,5 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+"""
+The article included in this repository is licensed under a Attribution-NonCommercial-ShareAlike 3.0
+license, meaning that you are free to copy, distribute, transmit and adapt this work for non-
+commercial use, but that you must credit Fabian Mueller as the original author of the piece, and
+provide a link to the source: https://bitbucket.org/dotcs/hangouts-log-reader/
+
+You can read the full license here:
+http://creativecommons.org/licenses/by-nc-sa/3.0/us/
+"""
 
 import sys
 import os
