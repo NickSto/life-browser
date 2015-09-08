@@ -1,0 +1,66 @@
+=============
+An analysis of the structure of the takeout JSON file.
+So far, this is based only on examining the first conversation in the 2014-10-04 dump.
+
+General notes:
+timestamps: They use timestamps accurate to the microsecond, so divide by 1,000,000 to get the seconds.
+conversation_id: The value of this key is always a dict with 1 key, 'id', which maps to a unique-looking string. It's present at many different levels, but is the same id within the same conversation (e.g. every element in data['conversation_state'][0] will always have the id 'UgwWD8oGsubG9LWd0x94AaABAQ').
+
+
+Top level
+---------
+- a dict containing 2 keys:
+continuation_end_timestamp:	timestamp of the last conversation?
+conversation_state:		the list of conversations?
+
+conversation_state
+------------------
+- a list, each element containing 3 keys:
+conversation_id:	a dict mapping 'id' to the convo id
+response_header:	a dict of header info
+conversation_state:	a dict with the conversation data
+
+conversation_state
+------------------
+- a dict, containing 3 keys:
+conversation_id:	a dict mapping 'id' to the convo id (the same one as its parent)
+conversation:		a dict containing metadata about the conversation
+event:			a list of the actual messages
+
+event
+-----
+- a list, each element containing 10 keys:
+conversation_id:	a dict mapping 'id' to the convo id (the same one as its parent)
+sender_id:		a dict with two types of id's presumably identifying the sender:
+			'gaia_id' and 'chat_id', both of which are the same value so far.
+timestamp:		a string with the timestamp
+self_event_state:	a dict with the keys 'user_id' (whose value is in the same format
+			as 'sender_id') and 'notification_level', and sometimes
+			'client_generated_id'
+event_id:		a string of the event id
+advances_sort_timestamp:	a boolean
+event_otr:		a string, e.g. 'ON_THE_RECORD'
+delivery_medium:	a dict with the phone number and whether it was Google Voice:
+			medium_type:	a string, e.g. 'GOOGLE_VOICE_MEDIUM'
+			self_phone:	a dict mapping 'e164' to the phone number
+event_type:		a string, e.g. 'REGULAR_CHAT_MESSAGE'
+chat_message:		a dict with the actual message!
+
+chat_message
+------------
+- a dict, containing 1 key:
+message_content:	a dict with the actual message!
+
+message_content
+---------------
+- a dict, containing 1 or 2 keys:
+attachment:		(optional)
+segment:		a list of the message, broken into individual SMS's?
+
+segment
+-------
+- a list, each element containing 2 or 3 keys:
+type:			a string, e.g. 'TEXT'
+formatting:		(optional) a dict of the visual formatting: 4 keys, each of which maps
+			to a boolean value: 'bold', 'italics', 'strikethrough', 'underline'
+text:			a string that's the actual message!
