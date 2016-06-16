@@ -233,12 +233,13 @@ class Conversation(object):
     """
     Conversation class
     """
-    def __init__(self, convo_id, timestamp, participants, events):
+    def __init__(self, convo_id, start_time, end_time, participants, events):
         """
         Constructor
         """
         self.convo_id = convo_id
-        self.timestamp = timestamp
+        self.start_time = start_time
+        self.end_time = end_time
         self.participants = participants
         self.events = events
     
@@ -255,14 +256,6 @@ class Conversation(object):
         @return conversation id
         """
         return self.convo_id
-
-    def get_timestamp(self):
-        """
-        Getter method for the timestamp
-
-        @return timestamp
-        """
-        return self.timestamp
         
     def get_participants(self):
         """
@@ -330,7 +323,6 @@ def _extract_convo_data(convo):
     """
     try:
         # note the initial timestamp of this conversation
-        initial_timestamp = convo["response_header"]["current_server_time"]
         convo_id = convo["conversation_id"]["id"]
 
         # find out the participants
@@ -351,10 +343,18 @@ def _extract_convo_data(convo):
 
         event_list = EventList()
 
+        start_time = None
+        end_time = None
         for event in convo["conversation_state"]["event"]:
             event_id = event["event_id"]
             sender_id = event["sender_id"] # has dict values "gaia_id" and "chat_id"
-            timestamp = event["timestamp"]
+            try:
+                timestamp = int(event["timestamp"])
+            except ValueError:
+                timestamp = event['timestamp']
+            if start_time is None:
+                start_time = timestamp
+            end_time = timestamp
             text = list()
             try:
                 message_content = event["chat_message"]["message_content"]
@@ -377,7 +377,7 @@ def _extract_convo_data(convo):
             event_list.add(Event(event_id, sender_id["gaia_id"], timestamp, text))
     except KeyError:
         raise RuntimeError("The conversation data could not be extracted.")
-    return Conversation(convo_id, initial_timestamp, participant_list, event_list)
+    return Conversation(convo_id, start_time, end_time, participant_list, event_list)
 
 def validate_file(filename):
     """
