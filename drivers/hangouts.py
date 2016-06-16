@@ -14,6 +14,7 @@ import sys
 import os
 import argparse
 import json
+import time
 
 from datetime import datetime
 
@@ -116,10 +117,8 @@ class ParticipantList(object):
         """
         @return names of the participants seperated by a comma
         """
-        string = ""
-        for p in self.p_list.values():
-            string += unicode(p) + ", "
-        return string[:-2]
+        return ', '.join(map(unicode, self.p_list.values()))
+
 
 class Event(object):
     """
@@ -401,16 +400,51 @@ def _write(message, file):
 
 def main(argv):
     parser = argparse.ArgumentParser(description='Commandline python script that allows reading Google Hangouts logfiles. Version: %s' % VERSION)
+    parser.set_defaults(start=0, end=9999999999)
 
     parser.add_argument('logfile', type=str, help='filename of the logfile')
+    parser.add_argument('--list', '-l', action='store_true', help='Just print the list of '
+        'conversations, not their full contents. Prints one line per conversation: the start time, '
+        'the id, and the list of participants.')
     parser.add_argument('--convo-id', '-c', type=str, help='shows the conversation with given id')
     parser.add_argument('--verbose', '-v', action="store_true", help='activates the verbose mode')
+    parser.add_argument('--start', '-s', help='Only show conversations that began later than this '
+        'timestamp or date ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:DD")')
+    parser.add_argument('--end', '-e', help='Only show conversations that ended earlier than this '
+        'timestamp or date ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:DD")')
+    parser.add_argument('--person', '-p', help='Only show conversations involving this person.')
 
     args = parser.parse_args()
 
+    try:
+        start = int(args.start) * 1000000
+    except ValueError:
+        start = human_time_to_timestamp(args.start) * 1000000
+    try:
+        end = int(args.end) * 1000000
+    except ValueError:
+        end = human_time_to_timestamp(args.end) * 1000000
+
     for convo in read_hangouts(args.logfile, verbose_mode=args.verbose, convo_id=args.convo_id):
-        if not args.convo_id or args.convo_id == convo.get_id():
-            convo.print_convo()
+        if (convo.start_time >= start and convo.end_time <= end and
+                (not args.convo_id or args.convo_id == convo.get_id())):
+            if args.person:
+                participants = map(unicode, convo.get_participants())
+                if args.person not in participants:
+                    continue
+            if args.list:
+                print '{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
+                                        convo.get_id(), unicode(convo.get_participants()))
+            else:
+                convo.print_convo()
+
+
+def human_time_to_timestamp(human_time):
+    try:
+        dt = datetime.strptime(human_time, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        dt = datetime.strptime(human_time + ' 00:00:00', '%Y-%m-%d %H:%M:%S')
+    return int(time.mktime(dt.timetuple()))
 
 
 if __name__ == "__main__":
