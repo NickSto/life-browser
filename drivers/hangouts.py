@@ -288,149 +288,115 @@ class Conversation(object):
         """
         return self.events
 
-class HangoutsReader(object):
-    """
-    Hangouts reader class
-    """
-    def __init__(self, logfile, verbose_mode=False, conversation_id=None):
-        """
-        Constructor
-        """
-        self.filename = self.validate_file(logfile)
-        self.verbose_mode = verbose_mode
-        self.conversation_id = conversation_id
-
-        # parse the json file
-        self.parse_json_file(logfile)
-
-    def parse_json_file(self, filename):
-        """
-        Parses the json file. Prints the conversation list or a complete conversation depending on the users choice.
-
-        @return None
-        """
-        with open(filename) as json_data:
-            self.print_v("Analyzing json file ...")
-            data = json.load(json_data)
-
-            for conversation in data["conversation_state"]:
-                c = self.extract_conversation_data(conversation)
-                if self.conversation_id is None:
-                    self.print_("conversation id: %s, participants: %s" % (c.get_id(), unicode(c.get_participants())))
-                elif c.get_id() == self.conversation_id:
-                    self.print_conversation(c)
-
-    def print_conversation(self, conversation):
+    def print_conversation(self):
         """
         Prints conversations in human readable format.
 
         @return None
         """
-        participants = conversation.get_participants()
-        for event in conversation.get_events():
+        participants = self.get_participants()
+        for event in self.get_events():
             author = "<UNKNOWN>"
             author_id = participants.get_by_id(event.get_sender_id())
             if author_id:
                 author = author_id.get_name()
-            self.print_("%(timestamp)s: <%(author)s> %(message)s" % \
+            print "%(timestamp)s: <%(author)s> %(message)s" % \
                     {
                         "timestamp": datetime.fromtimestamp(long(long(event.get_timestamp())/10**6.)),
                         "author": author,
                         "message": event.get_formatted_message(),
-                    })
+                    }
 
-    def extract_conversation_data(self, conversation):
-        """
-        Extracts the data that belongs to a single conversation.
 
-        @return Conversation object
-        """
-        try:
-            # note the initial timestamp of this conversation
-            initial_timestamp = conversation["response_header"]["current_server_time"]
-            conversation_id = conversation["conversation_id"]["id"]
+#TODO: Finish converting from stdout-printing class to generator yielding data structures.
+def read_hangouts(logfile, verbose_mode=False, conversation_id=None):
+    """Parses the json file.
+    Yields the conversation list or a complete conversation depending on the users choice."""
+    validate_file(logfile)
+    with open(logfile) as json_data:
+        if verbose_mode:
+            print "Analyzing json file ..."
+        data = json.load(json_data)
+        for conversation in data["conversation_state"]:
+            convo = _extract_conversation_data(conversation)
+            if conversation_id is None or convo.get_id() == conversation_id:
+                yield convo
 
-            # find out the participants
-            participant_list = ParticipantList()
-            for participant in conversation["conversation_state"]["conversation"]["participant_data"]:
-                gaia_id = participant["id"]["gaia_id"]
-                chat_id = participant["id"]["chat_id"]
+def _extract_conversation_data(conversation):
+    """
+    Extracts the data that belongs to a single conversation.
+
+    @return Conversation object
+    """
+    try:
+        # note the initial timestamp of this conversation
+        initial_timestamp = conversation["response_header"]["current_server_time"]
+        conversation_id = conversation["conversation_id"]["id"]
+
+        # find out the participants
+        participant_list = ParticipantList()
+        for participant in conversation["conversation_state"]["conversation"]["participant_data"]:
+            gaia_id = participant["id"]["gaia_id"]
+            chat_id = participant["id"]["chat_id"]
+            try:
+                name = participant["fallback_name"]
+            except KeyError:
+                name = None
+            try:
+                phone = participant["phone_number"]["e164"]
+            except KeyError:
+                phone = None
+            p = Participant(gaia_id,chat_id,name,phone)
+            participant_list.add(p)
+
+        event_list = EventList()
+
+        for event in conversation["conversation_state"]["event"]:
+            event_id = event["event_id"]
+            sender_id = event["sender_id"] # has dict values "gaia_id" and "chat_id"
+            timestamp = event["timestamp"]
+            text = list()
+            try:
+                message_content = event["chat_message"]["message_content"]
                 try:
-                    name = participant["fallback_name"]
+                    for segment in message_content["segment"]:
+                        if segment["type"].lower() in ("TEXT".lower(), "LINK".lower()):
+                            text.append(segment["text"])
                 except KeyError:
-                    name = None
+                    pass # may happen when there is no (compatible) attachment
                 try:
-                    phone = participant["phone_number"]["e164"]
+                    for attachment in message_content["attachment"]:
+                        # if there is a Google+ photo attachment we append the URL
+                        if attachment["embed_item"]["type"][0].lower() == "PLUS_PHOTO".lower():
+                            text.append(attachment["embed_item"]["embeds.PlusPhoto.plus_photo"]["url"])
                 except KeyError:
-                    phone = None
-                p = Participant(gaia_id,chat_id,name,phone)
-                participant_list.add(p)
+                    pass # may happen when there is no (compatible) attachment
+            except KeyError:
+                continue # that's okay
+            # finally add the event to the event list
+            event_list.add(Event(event_id, sender_id["gaia_id"], timestamp, text))
+    except KeyError:
+        raise RuntimeError("The conversation data could not be extracted.")
+    return Conversation(conversation_id, initial_timestamp, participant_list, event_list)
 
-            event_list = EventList()
+def validate_file(filename):
+    """
+    Checks if a file is valid or not.
+    Raises a ValueError if the file could not be found.
 
-            for event in conversation["conversation_state"]["event"]:
-                event_id = event["event_id"]
-                sender_id = event["sender_id"] # has dict values "gaia_id" and "chat_id"
-                timestamp = event["timestamp"]
-                text = list()
-                try:
-                    message_content = event["chat_message"]["message_content"]
-                    try:
-                        for segment in message_content["segment"]:
-                            if segment["type"].lower() in ("TEXT".lower(), "LINK".lower()):
-                                text.append(segment["text"])
-                    except KeyError:
-                        pass # may happen when there is no (compatible) attachment
-                    try:
-                        for attachment in message_content["attachment"]:
-                            # if there is a Google+ photo attachment we append the URL
-                            if attachment["embed_item"]["type"][0].lower() == "PLUS_PHOTO".lower():
-                                text.append(attachment["embed_item"]["embeds.PlusPhoto.plus_photo"]["url"])
-                    except KeyError:
-                        pass # may happen when there is no (compatible) attachment
-                except KeyError:
-                    continue # that's okay
-                # finally add the event to the event list
-                event_list.add(Event(event_id, sender_id["gaia_id"], timestamp, text))
-        except KeyError:
-            raise RuntimeError("The conversation data could not be extracted.")
-        return Conversation(conversation_id, initial_timestamp, participant_list, event_list)
+    @return filename if everything is fine
+    """
+    if not os.path.isfile(filename):
+        raise ValueError("The given file is not valid.")
+    return filename
 
-    def validate_file(self, filename):
-        """
-        Checks if a file is valid or not.
-        Raises a ValueError if the file could not be found.
+def _write(message, file):
+    """
+    Writes the message to file with suffix in front of the message.
 
-        @return filename if everything is fine
-        """
-        if not os.path.isfile(filename):
-            raise ValueError("The given file is not valid.")
-        return filename
-
-    def print_v(self, message):
-        """
-        Prints a message if verbose mode is activated.
-
-        @return None
-        """
-        if self.verbose_mode:
-            self.print_(message)
-
-    def print_(self, message):
-        """
-        Prints a message with suffix in front of the message.
-        
-        @return None
-        """
-        print "[%s] %s" % (os.path.basename(__file__), unicode(message).encode('utf8'))
-
-    def write_(self, message, file):
-        """
-        Writes the message to file with suffix in front of the message.
-
-        @return None
-        """
-        file.write( "[%s] %s" % (os.path.basename(__file__), unicode(message).encode('utf8')))
+    @return None
+    """
+    file.write( "[%s] %s" % (os.path.basename(__file__), unicode(message).encode('utf8')))
 
 
 def main(argv):
@@ -442,8 +408,12 @@ def main(argv):
 
     args = parser.parse_args()
 
-    hr = HangoutsReader(args.logfile, verbose_mode=args.verbose, conversation_id=args.conversation_id)
-    
+    for convo in read_hangouts(args.logfile, verbose_mode=args.verbose, conversation_id=args.conversation_id):
+        if args.conversation_id and args.conversation_id == convo.get_id():
+            convo.print_conversation()
+        else:
+            print "conversation id: %s, participants: %s" % (convo.get_id(), unicode(convo.get_participants()))
+
 
 if __name__ == "__main__":
     main(sys.argv)
