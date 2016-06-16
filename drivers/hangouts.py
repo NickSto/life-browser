@@ -233,11 +233,11 @@ class Conversation(object):
     """
     Conversation class
     """
-    def __init__(self, conversation_id, timestamp, participants, events):
+    def __init__(self, convo_id, timestamp, participants, events):
         """
         Constructor
         """
-        self.conversation_id = conversation_id
+        self.convo_id = convo_id
         self.timestamp = timestamp
         self.participants = participants
         self.events = events
@@ -246,7 +246,7 @@ class Conversation(object):
         """
         Prints to string
         """
-        return self.conversation_id 
+        return self.convo_id
 
     def get_id(self):
         """
@@ -254,7 +254,7 @@ class Conversation(object):
 
         @return conversation id
         """
-        return self.conversation_id
+        return self.convo_id
 
     def get_timestamp(self):
         """
@@ -288,7 +288,7 @@ class Conversation(object):
         """
         return self.events
 
-    def print_conversation(self):
+    def print_convo(self):
         """
         Prints conversations in human readable format.
 
@@ -309,7 +309,7 @@ class Conversation(object):
 
 
 #TODO: Finish converting from stdout-printing class to generator yielding data structures.
-def read_hangouts(logfile, verbose_mode=False, conversation_id=None):
+def read_hangouts(logfile, verbose_mode=False, convo_id=None):
     """Parses the json file.
     Yields the conversation list or a complete conversation depending on the users choice."""
     validate_file(logfile)
@@ -317,12 +317,12 @@ def read_hangouts(logfile, verbose_mode=False, conversation_id=None):
         if verbose_mode:
             print "Analyzing json file ..."
         data = json.load(json_data)
-        for conversation in data["conversation_state"]:
-            convo = _extract_conversation_data(conversation)
-            if conversation_id is None or convo.get_id() == conversation_id:
+        for convo in data["conversation_state"]:
+            convo = _extract_convo_data(convo)
+            if convo_id is None or convo.get_id() == convo_id:
                 yield convo
 
-def _extract_conversation_data(conversation):
+def _extract_convo_data(convo):
     """
     Extracts the data that belongs to a single conversation.
 
@@ -330,12 +330,12 @@ def _extract_conversation_data(conversation):
     """
     try:
         # note the initial timestamp of this conversation
-        initial_timestamp = conversation["response_header"]["current_server_time"]
-        conversation_id = conversation["conversation_id"]["id"]
+        initial_timestamp = convo["response_header"]["current_server_time"]
+        convo_id = convo["conversation_id"]["id"]
 
         # find out the participants
         participant_list = ParticipantList()
-        for participant in conversation["conversation_state"]["conversation"]["participant_data"]:
+        for participant in convo["conversation_state"]["conversation"]["participant_data"]:
             gaia_id = participant["id"]["gaia_id"]
             chat_id = participant["id"]["chat_id"]
             try:
@@ -351,7 +351,7 @@ def _extract_conversation_data(conversation):
 
         event_list = EventList()
 
-        for event in conversation["conversation_state"]["event"]:
+        for event in convo["conversation_state"]["event"]:
             event_id = event["event_id"]
             sender_id = event["sender_id"] # has dict values "gaia_id" and "chat_id"
             timestamp = event["timestamp"]
@@ -377,7 +377,7 @@ def _extract_conversation_data(conversation):
             event_list.add(Event(event_id, sender_id["gaia_id"], timestamp, text))
     except KeyError:
         raise RuntimeError("The conversation data could not be extracted.")
-    return Conversation(conversation_id, initial_timestamp, participant_list, event_list)
+    return Conversation(convo_id, initial_timestamp, participant_list, event_list)
 
 def validate_file(filename):
     """
@@ -403,16 +403,14 @@ def main(argv):
     parser = argparse.ArgumentParser(description='Commandline python script that allows reading Google Hangouts logfiles. Version: %s' % VERSION)
 
     parser.add_argument('logfile', type=str, help='filename of the logfile')
-    parser.add_argument('--conversation-id', '-c', type=str, help='shows the conversation with given id')
+    parser.add_argument('--convo-id', '-c', type=str, help='shows the conversation with given id')
     parser.add_argument('--verbose', '-v', action="store_true", help='activates the verbose mode')
 
     args = parser.parse_args()
 
-    for convo in read_hangouts(args.logfile, verbose_mode=args.verbose, conversation_id=args.conversation_id):
-        if args.conversation_id and args.conversation_id == convo.get_id():
-            convo.print_conversation()
-        else:
-            print "conversation id: %s, participants: %s" % (convo.get_id(), unicode(convo.get_participants()))
+    for convo in read_hangouts(args.logfile, verbose_mode=args.verbose, convo_id=args.convo_id):
+        if not args.convo_id or args.convo_id == convo.get_id():
+            convo.print_convo()
 
 
 if __name__ == "__main__":
