@@ -20,82 +20,51 @@ from datetime import datetime
 
 VERSION = "0.1"
 
+
 class Participant(object):
-  """
-  Participant class.
-  """
+
   def __init__(self, gaia_id, chat_id, name, phone):
-    """
-    Constructor
-    """
-    self.name = name 
+    self.name = name
     self.phone = phone
-    self.gaia_id = gaia_id 
+    self.gaia_id = gaia_id
     self.chat_id = chat_id
 
-  def get_id(self):
-    """
-    Getter for the internal Google ID of the participant.
-
-    @return internal Google participant id
-    """
+  @property
+  def id(self):
     return self.gaia_id
-  
-  def get_phone(self):
-    """
-    Getter for the phone of a participant.
 
-    @return phone of the participant (may be None)
-    """
-    return self.phone
-  def get_name(self):
-    """
-    Getter for the name of a participant.
-
-    @return name of the participant (may be None)
-    """
-    return self.name
+  @id.setter
+  def id(self, value):
+    self.gaia_id = value
 
   def __unicode__(self):
-    """
-    @return name of the participant or its id if name is None
-    """
-    if self.get_name() is None:
-      if self.get_phone() is None:
-        return self.get_id()
+    """@return name of the participant or its id if name is None"""
+    if self.name is None:
+      if self.phone is None:
+        return self.id
       else:
-        return self.get_phone()
+        return self.phone
     else:
-      #return "%s <%s>" % (self.get_name(), self.get_id())
-      return self.get_name()
+      #return "%s <%s>" % (self.name, self.id)
+      return self.name
+
 
 class ParticipantList(object):
-  """
-  List class for participants.
-  """
+
   def __init__(self):
-    """
-    Constructor
-    """
     self.p_list = {}
     self.current_iter = 0
     self.max_iter = 0
 
   def add(self, p):
-    """
-    Adds a participant to the list.
-
-    @return the participant list
-    """
-    self.p_list[p.get_id()] = p
+    """Adds a participant to the list.
+    @return the participant list"""
+    self.p_list[p.id] = p
     return self.p_list
 
   def get_by_id(self, id):
-    """
-    Queries a participant by its id.
-
-    @return the participant or None if id is not listed
-    """
+    """Queries a participant by its id.
+    @return the participant or None if id is not listed"""
     try:
       return self.p_list[id]
     except:
@@ -114,103 +83,43 @@ class ParticipantList(object):
       return self.p_list.values()[self.current_iter-1]
 
   def __unicode__(self):
-    """
-    @return names of the participants seperated by a comma
-    """
+    """@return names of the participants seperated by a comma"""
     return ', '.join(map(unicode, self.p_list.values()))
 
 
 class Event(object):
-  """
-  Event class.
-  """
-  def __init__(self, event_id, sender_id, timestamp, message):
-    """
-    Constructor
-    """
-    self.event_id = event_id
+
+  def __init__(self, id, sender_id, timestamp, message):
+    self.id = id
     self.sender_id = sender_id
     self.timestamp = timestamp
-    self.message = message
-
-  def get_id(self):
-    """
-    Getter method for the id.
-
-    @return event id
-    """
-    return self.event_id
-
-  def get_sender_id(self):
-    """
-    Getter method for the sender id.
-
-    @return sender id of the event
-    """
-    return self.sender_id
-
-  def get_timestamp(self):
-    """
-    Getter method for the timestamp.
-
-    @return timestamp of the event
-    """
-    return self.timestamp
-
-  def get_message(self):
-    """
-    Getter method for the message.
-
-    @return message (list)
-    """
-    return self.message
-  
-  def get_picture(self):
-    """
-    Getter method for the picture.
-
-    @return picture (url)
-    """
-    return self.message
+    self.message = message  # a list
 
   def get_formatted_message(self):
-    """
-    Getter method for a formatted message (the messages are joined by a space).
-
-    @return message (string)
-    """
+    """Get a formatted message (the messages are joined by a space).
+    @return message (string)"""
     string = ""
     for m in self.message:
       string += m + " "
     return string[:-1]
 
+
 class EventList(object):
-  """
-  Event list class
-  """
+
   def __init__(self):
-    """
-    Constructor
-    """
     self.event_list = {}
     self.current_iter = 0
     self.max_iter = 0
 
   def add(self, e):
-    """
-    Adds an event to the event list
-
-    @return event list
-    """
-    self.event_list[e.get_id()] = e
+    """Adds an event to the event list
+    @return event list"""
+    self.event_list[e.id] = e
     return self.event_list
 
   def get_by_id(self, id):
-    """
-    Getter method for an event by its id.
-
-    @returns event
-    """
+    """Get an event by its id.
+    @returns event"""
     try:
       return self.event_list[id]
     except:
@@ -228,79 +137,57 @@ class EventList(object):
       self.current_iter += 1
       return self.event_list.values()[self.current_iter-1]
 
+
 class Conversation(object):
-  """
-  Conversation class
-  """
-  def __init__(self, convo_id, start_time, end_time, participants, events):
-    """
-    Constructor
-    """
-    self.convo_id = convo_id
+
+  def __init__(self, id, start_time, end_time, participants, events):
+    self.id = id
     self.start_time = start_time
     self.end_time = end_time
-    self.participants = participants
+    self.participants = participants  # a ParticipantsList
     self.events = events
-  
+    self._events_sorted = False
+
   def __str__(self):
-    """
-    Prints to string
-    """
-    return self.convo_id
+    return self.id
 
-  def get_id(self):
-    """
-    Getter method for the conversation id
+  @property
+  def events(self):
+    """Getter method for the sorted events.
+    If the events are not sorted yet (checked via self._events_sorted), it sorts
+    them and stores them back in self.events.
+    @return events of the conversation, sorted by timestamp"""
+    if not self._events_sorted:
+      self._events = sorted(self._events, key=lambda event: event.timestamp)
+      self._events_sorted = True
+    return self._events
 
-    @return conversation id
-    """
-    return self.convo_id
-    
-  def get_participants(self):
-    """
-    Getter method for the participants.
-
-    @return participants of the conversation
-    """
-    return self.participants
-
-  def get_events(self):
-    """
-    Getter method for the sorted events.
-
-    @return events of the conversation (sorted)
-    """
-    return sorted(self.events, key=lambda event: event.get_timestamp())
+  @events.setter
+  def events(self, value):
+    self._events = value
 
   def get_events_unsorted(self):
-    """
-    Getter method for the unsorted events.
-
-    @return events of the conversation (unsorted)
-    """
+    """Get the list of events, but skip sorting.
+    @return events of the conversation (unsorted)"""
     return self.events
 
   def print_convo(self):
-    """
-    Prints conversations in human readable format.
-
-    @return None
-    """
-    participants = self.get_participants()
-    for event in self.get_events():
+    """Prints conversations in human readable format.
+    @return None"""
+    participants = self.participants
+    for event in self.events:
       author = "<UNKNOWN>"
-      author_id = participants.get_by_id(event.get_sender_id())
+      author_id = participants.get_by_id(event.sender_id)
       if author_id:
-        author = author_id.get_name()
+        author = author_id.name
       print "%(timestamp)s: <%(author)s> %(message)s" % \
           {
-            "timestamp": datetime.fromtimestamp(long(long(event.get_timestamp())/10**6.)),
+            "timestamp": datetime.fromtimestamp(long(long(event.timestamp)/10**6.)),
             "author": author,
             "message": event.get_formatted_message(),
           }
 
 
-#TODO: Finish converting from stdout-printing class to generator yielding data structures.
 def read_hangouts(logfile, verbose_mode=False, convo_id=None):
   """Parses the json file.
   Yields the conversation list or a complete conversation depending on the users choice."""
@@ -311,15 +198,13 @@ def read_hangouts(logfile, verbose_mode=False, convo_id=None):
     data = json.load(json_data)
     for convo in data["conversation_state"]:
       convo = _extract_convo_data(convo)
-      if convo_id is None or convo.get_id() == convo_id:
+      if convo_id is None or convo.id == convo_id:
         yield convo
 
-def _extract_convo_data(convo):
-  """
-  Extracts the data that belongs to a single conversation.
 
-  @return Conversation object
-  """
+def _extract_convo_data(convo):
+  """Extracts the data that belongs to a single conversation.
+  @return Conversation object"""
   try:
     # note the initial timestamp of this conversation
     convo_id = convo["conversation_id"]["id"]
@@ -378,24 +263,14 @@ def _extract_convo_data(convo):
     raise RuntimeError("The conversation data could not be extracted.")
   return Conversation(convo_id, start_time, end_time, participant_list, event_list)
 
-def validate_file(filename):
-  """
-  Checks if a file is valid or not.
-  Raises a ValueError if the file could not be found.
 
-  @return filename if everything is fine
-  """
+def validate_file(filename):
+  """Checks if a file is valid or not.
+  Raises a ValueError if the file could not be found.
+  @return filename if everything is fine"""
   if not os.path.isfile(filename):
     raise ValueError("The given file is not valid.")
   return filename
-
-def _write(message, file):
-  """
-  Writes the message to file with suffix in front of the message.
-
-  @return None
-  """
-  file.write( "[%s] %s" % (os.path.basename(__file__), unicode(message).encode('utf8')))
 
 
 def main(argv):
@@ -427,14 +302,14 @@ def main(argv):
 
   for convo in read_hangouts(args.logfile, verbose_mode=args.verbose, convo_id=args.convo_id):
     if (convo.start_time >= start and convo.end_time <= end and
-        (not args.convo_id or args.convo_id == convo.get_id())):
+        (not args.convo_id or args.convo_id == convo.id)):
       if args.person:
-        participants = map(unicode, convo.get_participants())
+        participants = map(unicode, convo.participants)
         if args.person not in participants:
           continue
       if args.list:
         print '{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
-                                convo.get_id(), unicode(convo.get_participants()))
+                                convo.id, unicode(convo.participants))
       else:
         convo.print_convo()
 
