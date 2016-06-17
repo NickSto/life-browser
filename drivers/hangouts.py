@@ -45,7 +45,6 @@ class Participant(object):
       else:
         return self.phone
     else:
-      #return "%s <%s>" % (self.name, self.id)
       return self.name
 
 
@@ -56,10 +55,10 @@ class ParticipantList(object):
     self.current_iter = 0
     self.max_iter = 0
 
-  def add(self, p):
+  def add(self, participant):
     """Adds a participant to the list.
     @return the participant list"""
-    self.p_list[p.id] = p
+    self.p_list[participant.id] = participant
     return self.p_list
 
   def get_by_id(self, id):
@@ -98,10 +97,7 @@ class Event(object):
   def get_formatted_message(self):
     """Get a formatted message (the messages are joined by a space).
     @return message (string)"""
-    string = ""
-    for m in self.message:
-      string += m + " "
-    return string[:-1]
+    return ' '.join(self.message)
 
 
 class EventList(object):
@@ -111,10 +107,10 @@ class EventList(object):
     self.current_iter = 0
     self.max_iter = 0
 
-  def add(self, e):
+  def add(self, event):
     """Adds an event to the event list
     @return event list"""
-    self.event_list[e.id] = e
+    self.event_list[event.id] = event
     return self.event_list
 
   def get_by_id(self, id):
@@ -222,8 +218,7 @@ def _extract_convo_data(convo):
         phone = participant["phone_number"]["e164"]
       except KeyError:
         phone = None
-      p = Participant(gaia_id,chat_id,name,phone)
-      participant_list.add(p)
+      participant_list.add(Participant(gaia_id, chat_id, name, phone))
 
     event_list = EventList()
 
@@ -231,7 +226,7 @@ def _extract_convo_data(convo):
     end_time = None
     for event in convo["conversation_state"]["event"]:
       event_id = event["event_id"]
-      sender_id = event["sender_id"] # has dict values "gaia_id" and "chat_id"
+      sender_id = event["sender_id"]  # has dict values "gaia_id" and "chat_id"
       try:
         timestamp = int(event["timestamp"])
       except ValueError:
@@ -239,7 +234,7 @@ def _extract_convo_data(convo):
       if start_time is None:
         start_time = timestamp
       end_time = timestamp
-      text = list()
+      text = []
       try:
         message_content = event["chat_message"]["message_content"]
         try:
@@ -247,16 +242,16 @@ def _extract_convo_data(convo):
             if segment["type"].lower() in ("TEXT".lower(), "LINK".lower()):
               text.append(segment["text"])
         except KeyError:
-          pass # may happen when there is no (compatible) attachment
+          pass  # may happen when there is no (compatible) attachment
         try:
           for attachment in message_content["attachment"]:
             # if there is a Google+ photo attachment we append the URL
             if attachment["embed_item"]["type"][0].lower() == "PLUS_PHOTO".lower():
               text.append(attachment["embed_item"]["embeds.PlusPhoto.plus_photo"]["url"])
         except KeyError:
-          pass # may happen when there is no (compatible) attachment
+          pass  # may happen when there is no (compatible) attachment
       except KeyError:
-        continue # that's okay
+        continue  # that's okay
       # finally add the event to the event list
       event_list.add(Event(event_id, sender_id["gaia_id"], timestamp, text))
   except KeyError:
