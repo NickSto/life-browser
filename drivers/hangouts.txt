@@ -3,6 +3,8 @@ Google Hangouts
 
 https://bitbucket.org/dotcs/hangouts-log-reader/
 
+See life-tests.ipynb for investigations and codification of assumptions.
+
 =============
 An analysis of the structure of the takeout JSON file.
 So far, this is based only on examining the first conversation in the 2014-10-04 dump.
@@ -32,12 +34,46 @@ conversation_id:	a dict mapping 'id' to the convo id (the same one as its parent
 conversation:		a dict containing metadata about the conversation
 event:			a list of the actual messages
 
-event
+conversation
+------------
+- a dict, containing 12 keys:
+id
+type:			a string telling whether it's a group chat? Values I've observed:
+			- STICKY_ONE_TO_ONE: By far the most common. A "normal" conversation?
+			  All the ones I've seen so far only have 2 participants.
+			- GROUP: A group chat? The only one I've seen had 5 participants.
+current_participant
+force_history_state
+fork_on_external_invite
+has_active_hangout
+network_type
+otr_status
+otr_toggle
+read_state
+self_conversation_state
+participant_data:	a list where each element seems to hold the data on one of the participants
+			in the conversation
+
+participant_data
+----------------
+- a list, each element containing 4-6 keys:
+id
+participant_type
+new_invitation_status
+invitation_status
+fallback_name:		(optional) A name for the participant. Could be a real name, a phone number,
+			or an email (so far as I've seen).
+phone_number:		(optional) A dict containing the participant's phone number and other
+			information about it. If this is present, 'fallback_name' should also be.
+
+event (element of the second 'conversation_state')
 -----
 - a list, each element containing 10 keys:
 conversation_id:	a dict mapping 'id' to the convo id (the same one as its parent)
 sender_id:		a dict with two types of id's presumably identifying the sender:
 			'gaia_id' and 'chat_id', both of which are the same value so far.
+			- I haven't found any better way to identify the sender than this opaque
+			  token, if it's a REGULAR_CHAT_MESSAGE.
 timestamp:		a string with the timestamp
 self_event_state:	a dict with the keys 'user_id' (whose value is in the same format
 			as 'sender_id') and 'notification_level', and sometimes
@@ -47,8 +83,17 @@ advances_sort_timestamp:	a boolean
 event_otr:		a string, e.g. 'ON_THE_RECORD'
 delivery_medium:	a dict with the phone number and whether it was Google Voice:
 			medium_type:	a string, e.g. 'GOOGLE_VOICE_MEDIUM'
+			- This seems to be the best way to determine if it's actually an SMS.
+			  'BABEL_MEDIUM' seems to reliably be a Hangouts chat.
 			self_phone:	a dict mapping 'e164' to the phone number
-event_type:		a string, e.g. 'REGULAR_CHAT_MESSAGE'
+event_type:		a string identifying the type of event. Values I've observed:
+			- REGULAR_CHAT_MESSAGE: A regular Hangouts chat (a gchat)?
+			  However, I've found several of these labeled GOOGLE_VOICE_MEDIUM,
+			  which certainly seem like SMS messages.
+			- SMS: A Google Voice text message.
+			- VOICEMAIL: A Google Voice voicemail. Where you normally find the chat
+			  message text, you'll find the transcription.
+			- HANGOUT_EVENT: An audio or video call? No message text.
 chat_message:		a dict with the actual message!
 
 chat_message
@@ -60,12 +105,23 @@ message_content
 ---------------
 - a dict, containing 1 or 2 keys:
 attachment:		(optional)
-segment:		a list of the message, broken into individual SMS's?
+segment:		a list of parts of the message
+			- This is actually optional, too, if the message is just an attachment.
 
 segment
 -------
 - a list, each element containing 2 or 3 keys:
-type:			a string, e.g. 'TEXT'
-formatting:		(optional) a dict of the visual formatting: 4 keys, each of which maps
-			to a boolean value: 'bold', 'italics', 'strikethrough', 'underline'
+  - each segment seems to be part of a single chat or text message, broken up in some
+    arbitrary-seeming way.
+type:			a string. Values I've seen:
+			- TEXT: A regular chat message.
+			- LINE_BREAK: What it says on the tin. It seems then either the 'text' will
+			  be '\n', or there won't be any 'text' element.
+			- LINK: The 'text' be a url, and there will be a 'link_data'.
+formatting:		(optional) a dict of the visual formatting for the text in this segment.
+			Contains 4 keys, each of which holds a boolean value:
+			'bold', 'italics', 'strikethrough', 'underline'
+link_data:		(optional) if the 'type' is 'LINK', this will be present. It will be a dict
+			containing a key 'link_target'.
 text:			a string that's the actual message!
+			- This may be omitted, e.g. for 'type's of 'LINE_BREAK'
