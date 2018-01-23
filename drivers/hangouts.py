@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 The article included in this repository is licensed under a Attribution-NonCommercial-ShareAlike 3.0
@@ -37,7 +37,7 @@ class Participant(object):
   def id(self, value):
     self.gaia_id = value
 
-  def __unicode__(self):
+  def __str__(self):
     """@return name of the participant or its id if name is None"""
     if self.name is None:
       if self.phone is None:
@@ -74,16 +74,16 @@ class ParticipantList(object):
     self.max_iter = len(self.p_list)-1
     return self
 
-  def next(self):
+  def __next__(self):
     if self.current_iter > self.max_iter:
       raise StopIteration
     else:
       self.current_iter += 1
-      return self.p_list.values()[self.current_iter-1]
+      return list(self.p_list.values())[self.current_iter-1]
 
-  def __unicode__(self):
+  def __str__(self):
     """@return names of the participants seperated by a comma"""
-    return ', '.join(map(unicode, self.p_list.values()))
+    return ', '.join(map(str, self.p_list.values()))
 
 
 class Event(object):
@@ -126,12 +126,12 @@ class EventList(object):
     self.max_iter = len(self.event_list)-1
     return self
 
-  def next(self):
+  def __next__(self):
     if self.current_iter > self.max_iter:
       raise StopIteration
     else:
       self.current_iter += 1
-      return self.event_list.values()[self.current_iter-1]
+      return list(self.event_list.values())[self.current_iter-1]
 
 
 class Conversation(object):
@@ -176,12 +176,12 @@ class Conversation(object):
       author_id = participants.get_by_id(event.sender_id)
       if author_id:
         author = author_id.name
-      print "%(timestamp)s: <%(author)s> %(message)s" % \
+      print("%(timestamp)s: <%(author)s> %(message)s" % \
           {
-            "timestamp": datetime.fromtimestamp(long(long(event.timestamp)/10**6.)),
+            "timestamp": datetime.fromtimestamp(float(event.timestamp)/10**6),
             "author": author,
             "message": event.get_formatted_message(),
-          }
+          })
 
 
 def read_hangouts(logfile, verbose_mode=False, convo_id=None):
@@ -190,7 +190,7 @@ def read_hangouts(logfile, verbose_mode=False, convo_id=None):
   validate_file(logfile)
   with open(logfile) as json_data:
     if verbose_mode:
-      print "Analyzing json file ..."
+      print("Analyzing json file ...")
     data = json.load(json_data)
     for convo in data["conversation_state"]:
       convo = _extract_convo_data(convo)
@@ -299,12 +299,12 @@ def main(argv):
     if (convo.start_time >= start and convo.end_time <= end and
         (not args.convo_id or args.convo_id == convo.id)):
       if args.person:
-        participants = map(unicode, convo.participants)
+        participants = map(str, convo.participants)
         if args.person not in participants:
           continue
       if args.list:
-        print '{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
-                                convo.id, unicode(convo.participants))
+        print('{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
+                                convo.id, convo.participants))
       else:
         convo.print_convo()
 
