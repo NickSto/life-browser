@@ -1,3 +1,8 @@
+Google Hangouts
+- Google Takeout JSON
+
+https://bitbucket.org/dotcs/hangouts-log-reader/
+
 =============
 An analysis of the structure of the takeout JSON file.
 So far, this is based only on examining the first conversation in the 2014-10-04 dump.
