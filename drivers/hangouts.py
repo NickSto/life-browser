@@ -176,15 +176,11 @@ class Conversation(object):
     @return None"""
     participants = self.participants
     for event in self.events:
-      timestamp = float(event.timestamp)
-      if not (start <= timestamp <= end):
+      if not (start <= event.timestamp <= end):
         continue
-      author = "<UNKNOWN>"
-      author_id = participants.get_by_id(event.sender_id)
-      if author_id:
-        author = author_id.name
+      author = participants.get_by_id(event.sender_id)
       print('{timestamp}: <{author}> {message}'.format(
-          timestamp=datetime.fromtimestamp(timestamp//10**6),
+          timestamp=datetime.fromtimestamp(event.timestamp),
           author=author,
           message=event.get_formatted_message(),
         )
@@ -231,12 +227,15 @@ def _extract_convo_data(convo):
       event_id = event["event_id"]
       sender_id = event["sender_id"]  # has dict values "gaia_id" and "chat_id"
       try:
-        timestamp = int(event["timestamp"])
+        # The timestamps are in microseconds(!). Convert to seconds.
+        timestamp = float(event["timestamp"])/1000000
       except ValueError:
-        timestamp = event['timestamp']
-      if start_time is None:
+        logging.error('Invalid timestamp "{}"'.format(timestamp))
+        timestamp = None
+      if start_time is None or timestamp < start_time:
         start_time = timestamp
-      end_time = timestamp
+      if end_time is None or timestamp > end_time:
+        end_time = timestamp
       text = []
       try:
         message_content = event["chat_message"]["message_content"]
@@ -285,15 +284,15 @@ def make_argparser():
     help='Show the conversation with given id')
   parser.add_argument('-s', '--start', default=0,
     help='Only show messages from after this timestamp or date ("YYYY-MM-DD" or '
-         '"YYYY-MM-DD HH:MM:DD")')
+         '"YYYY-MM-DD HH:MM:DD"). If the date doesn\'t include a time, it\'s assumed to be the '
+         'start of that day.')
   parser.add_argument('-e', '--end', default=9999999999,
-    help='Only show messages from before this timestamp or date ("YYYY-MM-DD" or '
-         '"YYYY-MM-DD HH:MM:DD")')
+    help='Only show messages from before this timestamp or date (see --start for format).')
   parser.add_argument('-p', '--person',
     help='Only show conversations involving this person. This can be a fuzzy match. If any part of '
          'a participant\'s name matches this (case-insensitive), it\'s considered a hit.')
   parser.add_argument('--exact-person', action='store_true',
-    help='Make --person require an exact match.')
+    help='Make --person require an exact match. It\'s still case-insensitive.')
   parser.add_argument('-L', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
@@ -313,13 +312,13 @@ def main(argv):
   tone_down_logger()
 
   try:
-    start = int(args.start) * 1000000
+    start = int(args.start)
   except ValueError:
-    start = human_time_to_timestamp(args.start) * 1000000
+    start = human_time_to_timestamp(args.start)
   try:
-    end = int(args.end) * 1000000
+    end = int(args.end)
   except ValueError:
-    end = human_time_to_timestamp(args.end) * 1000000
+    end = human_time_to_timestamp(args.end)
 
   validate_file(args.logfile)
 
@@ -346,7 +345,7 @@ def main(argv):
       if not hit:
         continue
     if args.list:
-      print('{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
+      print('{} {} {}'.format(datetime.fromtimestamp(convo.start_time),
                               convo.id, convo.participants))
     else:
       convo.print_convo(start=start, end=end)
