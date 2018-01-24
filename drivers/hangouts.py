@@ -21,7 +21,7 @@ import argparse
 
 from datetime import datetime
 
-VERSION = "0.1"
+VERSION = "0.2"
 
 
 class Participant(object):
@@ -274,6 +274,7 @@ def main(argv):
 
   parser.add_argument('logfile', type=str, help='filename of the Hangouts log file. Can be a '
     'raw or gzipped .json file, or a zip/tarball exported by Google.')
+  parser.add_argument('--no-sort', '-S', dest='sort', action='store_false', default=True)
   parser.add_argument('--list', '-l', action='store_true', help='Just print the list of '
     'conversations, not their full contents. Prints one line per conversation: the start time, '
     'the id, and the list of participants.')
@@ -283,7 +284,11 @@ def main(argv):
     'timestamp or date ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:DD")')
   parser.add_argument('--end', '-e', help='Only show conversations that ended earlier than this '
     'timestamp or date ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:DD")')
-  parser.add_argument('--person', '-p', help='Only show conversations involving this person.')
+  parser.add_argument('--person', '-p', help='Only show conversations involving this person. This '
+    'can be a fuzzy match. If any part of a participant\'s name matches this (case-insensitive), '
+    'it\'s considered a hit.')
+  parser.add_argument('--exact-person', action='store_true', help='Make --person require an exact '
+    'match.')
 
   args = parser.parse_args()
 
@@ -300,18 +305,31 @@ def main(argv):
 
   json_data = extract_data(args.logfile)
 
-  for convo in read_hangouts(json_data, verbose_mode=args.verbose, convo_id=args.convo_id):
-    if (convo.start_time >= start and convo.end_time <= end and
-        (not args.convo_id or args.convo_id == convo.id)):
-      if args.person:
-        participants = map(str, convo.participants)
-        if args.person not in participants:
-          continue
-      if args.list:
-        print('{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
-                                convo.id, convo.participants))
-      else:
-        convo.print_convo()
+  all_convos = read_hangouts(json_data, verbose_mode=args.verbose, convo_id=args.convo_id)
+  if args.sort:
+    all_convos = sorted(all_convos, key=lambda c: c.start_time)
+
+  for convo in all_convos:
+    if convo.start_time < start or convo.end_time > end:
+      continue
+    if args.convo_id and args.convo_id != convo.id:
+      continue
+    if args.person:
+      hit = False
+      for participant in convo.participants:
+        if args.exact_person:
+          if args.person.lower() == str(participant).lower():
+            hit = True
+        else:
+          if args.person.lower() in str(participant).lower():
+            hit = True
+      if not hit:
+        continue
+    if args.list:
+      print('{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
+                              convo.id, convo.participants))
+    else:
+      convo.print_convo()
 
 
 def human_time_to_timestamp(human_time):
@@ -350,6 +368,11 @@ def extract_data(path):
   else:
     sys.stderr.write('Error: file ending of "{}" not recognized.\n'.format(os.path.basename(path)))
     return None
+
+
+def fail(message):
+  sys.stderr.write(message+"\n")
+  sys.exit(1)
 
 
 if __name__ == "__main__":
