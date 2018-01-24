@@ -171,21 +171,24 @@ class Conversation(object):
     @return events of the conversation (unsorted)"""
     return self.events
 
-  def print_convo(self):
+  def print_convo(self, start=0, end=9999999999):
     """Prints conversations in human readable format.
     @return None"""
     participants = self.participants
     for event in self.events:
+      timestamp = float(event.timestamp)
+      if not (start <= timestamp <= end):
+        continue
       author = "<UNKNOWN>"
       author_id = participants.get_by_id(event.sender_id)
       if author_id:
         author = author_id.name
-      print("%(timestamp)s: <%(author)s> %(message)s" % \
-          {
-            "timestamp": datetime.fromtimestamp(float(event.timestamp)/10**6),
-            "author": author,
-            "message": event.get_formatted_message(),
-          })
+      print('{timestamp}: <{author}> {message}'.format(
+          timestamp=datetime.fromtimestamp(timestamp//10**6),
+          author=author,
+          message=event.get_formatted_message(),
+        )
+      )
 
 
 def read_hangouts(json_data, convo_id=None):
@@ -281,10 +284,10 @@ def make_argparser():
   parser.add_argument('-c', '--convo-id',
     help='Show the conversation with given id')
   parser.add_argument('-s', '--start', default=0,
-    help='Only show conversations that began later than this timestamp or date ("YYYY-MM-DD" or '
+    help='Only show messages from after this timestamp or date ("YYYY-MM-DD" or '
          '"YYYY-MM-DD HH:MM:DD")')
   parser.add_argument('-e', '--end', default=9999999999,
-    help='Only show conversations that ended earlier than this timestamp or date ("YYYY-MM-DD" or '
+    help='Only show messages from before this timestamp or date ("YYYY-MM-DD" or '
          '"YYYY-MM-DD HH:MM:DD")')
   parser.add_argument('-p', '--person',
     help='Only show conversations involving this person. This can be a fuzzy match. If any part of '
@@ -327,7 +330,7 @@ def main(argv):
     all_convos = sorted(all_convos, key=lambda c: c.start_time)
 
   for convo in all_convos:
-    if convo.start_time < start or convo.end_time > end:
+    if convo.start_time > end or convo.end_time < start:
       continue
     if args.convo_id and args.convo_id != convo.id:
       continue
@@ -346,7 +349,7 @@ def main(argv):
       print('{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
                               convo.id, convo.participants))
     else:
-      convo.print_convo()
+      convo.print_convo(start=start, end=end)
 
 
 def human_time_to_timestamp(human_time):
