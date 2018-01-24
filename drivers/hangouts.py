@@ -237,6 +237,7 @@ def _extract_convo_data(convo):
         start_time = timestamp
       if end_time is None or timestamp > end_time:
         end_time = timestamp
+      #TODO: Deal with HANGOUT_EVENT and VOICEMAIL.
       text = []
       try:
         message_content = event["chat_message"]["message_content"]
@@ -356,6 +357,9 @@ def main(argv):
         )
       )
     else:
+      #TODO: Interleave messages from different conversations chronologically.
+      #TODO: New output format: Print dates only when they change, then:
+      #      09:18:55 SMS <John Smith> => <Phil Donahue>: Hey what is the haps?
       convo.print_convo(start=start, end=end)
 
 
