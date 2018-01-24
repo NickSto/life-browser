@@ -179,8 +179,9 @@ class Conversation(object):
       if not (start <= event.timestamp <= end):
         continue
       author = participants.get_by_id(event.sender_id)
+      time_str = datetime.fromtimestamp(event.timestamp).strftime('%Y-%m-%d %H:%M:%S')
       print('{timestamp}: <{author}> {message}'.format(
-          timestamp=datetime.fromtimestamp(event.timestamp),
+          timestamp=time_str,
           author=author,
           message=event.get_formatted_message(),
         )
@@ -241,7 +242,9 @@ def _extract_convo_data(convo):
         message_content = event["chat_message"]["message_content"]
         try:
           for segment in message_content["segment"]:
-            if segment["type"].lower() in ("TEXT".lower(), "LINK".lower()):
+            if segment["type"] == "LINE_BREAK":
+              text.append('\n')
+            elif segment["type"] in ("TEXT", "LINK"):
               text.append(segment["text"])
         except KeyError:
           pass  # may happen when there is no (compatible) attachment
@@ -345,8 +348,13 @@ def main(argv):
       if not hit:
         continue
     if args.list:
-      print('{} {} {}'.format(datetime.fromtimestamp(convo.start_time),
-                              convo.id, convo.participants))
+      time_str = datetime.fromtimestamp(convo.start_time).strftime('%Y-%m-%d %H:%M:%S')
+      print('{timestamp} {convo_id} {participants}'.format(
+          timestamp=time_str,
+          convo_id=convo.id,
+          participants=convo.participants
+        )
+      )
     else:
       convo.print_convo(start=start, end=end)
 
