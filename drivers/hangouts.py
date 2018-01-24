@@ -22,7 +22,7 @@ import argparse
 
 from datetime import datetime
 
-VERSION = "0.2"
+VERSION = '0.2.1'
 
 
 class Participant(object):
@@ -268,34 +268,43 @@ def validate_file(filename):
   return filename
 
 
-def main(argv):
-  parser = argparse.ArgumentParser(description='Commandline python script that allows reading Google Hangouts logfiles. Version: %s' % VERSION)
-  parser.set_defaults(start=0, end=9999999999)
-
-  parser.add_argument('logfile', type=str, help='filename of the Hangouts log file. Can be a '
-    'raw or gzipped .json file, or a zip/tarball exported by Google.')
-  parser.add_argument('--no-sort', '-S', dest='sort', action='store_false', default=True)
-  parser.add_argument('--list', '-l', action='store_true', help='Just print the list of '
-    'conversations, not their full contents. Prints one line per conversation: the start time, '
-    'the id, and the list of participants.')
-  parser.add_argument('--convo-id', '-c', type=str, help='shows the conversation with given id')
-  parser.add_argument('--start', '-s', help='Only show conversations that began later than this '
-    'timestamp or date ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:DD")')
-  parser.add_argument('--end', '-e', help='Only show conversations that ended earlier than this '
-    'timestamp or date ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:DD")')
-  parser.add_argument('--person', '-p', help='Only show conversations involving this person. This '
-    'can be a fuzzy match. If any part of a participant\'s name matches this (case-insensitive), '
-    'it\'s considered a hit.')
-  parser.add_argument('--exact-person', action='store_true', help='Make --person require an exact '
-    'match.')
-  parser.add_argument('--log', '-L', type=argparse.FileType('w'), default=sys.stderr,
+def make_argparser():
+  parser = argparse.ArgumentParser(description='Commandline python script that allows reading '
+                                               'Google Hangouts logfiles.')
+  parser.add_argument('logfile',
+    help='filename of the Hangouts log file. Can be a raw or gzipped .json file, or a zip/tarball '
+         'exported by Google.')
+  parser.add_argument('-S', '--no-sort', dest='sort', action='store_false', default=True)
+  parser.add_argument('-l', '--list', action='store_true',
+    help='Just print the list of conversations, not their full contents. Prints one line per '
+         'conversation: the start time, the id, and the list of participants.')
+  parser.add_argument('-c', '--convo-id',
+    help='Show the conversation with given id')
+  parser.add_argument('-s', '--start', default=0,
+    help='Only show conversations that began later than this timestamp or date ("YYYY-MM-DD" or '
+         '"YYYY-MM-DD HH:MM:DD")')
+  parser.add_argument('-e', '--end', default=9999999999,
+    help='Only show conversations that ended earlier than this timestamp or date ("YYYY-MM-DD" or '
+         '"YYYY-MM-DD HH:MM:DD")')
+  parser.add_argument('-p', '--person',
+    help='Only show conversations involving this person. This can be a fuzzy match. If any part of '
+         'a participant\'s name matches this (case-insensitive), it\'s considered a hit.')
+  parser.add_argument('--exact-person', action='store_true',
+    help='Make --person require an exact match.')
+  parser.add_argument('-L', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
-  parser.add_argument('--quiet', '-q', dest='volume', action='store_const', const=logging.CRITICAL,
+  parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
     default=logging.WARNING)
-  parser.add_argument('--verbose', '-v', dest='volume', action='store_const', const=logging.INFO)
-  parser.add_argument('--debug', '-D', dest='volume', action='store_const', const=logging.DEBUG)
+  parser.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
+  parser.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
+  parser.add_argument('--version', action='version', version=VERSION)
+  return parser
 
-  args = parser.parse_args()
+
+def main(argv):
+
+  parser = make_argparser()
+  args = parser.parse_args(argv[1:])
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
