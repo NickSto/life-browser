@@ -187,15 +187,13 @@ class Conversation(object):
 def read_hangouts(logfile, verbose_mode=False, convo_id=None):
   """Parses the json file.
   Yields the conversation list or a complete conversation depending on the users choice."""
-  validate_file(logfile)
-  with open(logfile) as json_data:
-    if verbose_mode:
-      print("Analyzing json file ...")
-    data = json.load(json_data)
-    for convo in data["conversation_state"]:
-      convo = _extract_convo_data(convo)
-      if convo_id is None or convo.id == convo_id:
-        yield convo
+  if verbose_mode:
+    print("Analyzing json file ...")
+  data = json.load(logfile)
+  for convo in data["conversation_state"]:
+    convo = _extract_convo_data(convo)
+    if convo_id is None or convo.id == convo_id:
+      yield convo
 
 
 def _extract_convo_data(convo):
@@ -295,18 +293,21 @@ def main(argv):
   except ValueError:
     end = human_time_to_timestamp(args.end) * 1000000
 
-  for convo in read_hangouts(args.logfile, verbose_mode=args.verbose, convo_id=args.convo_id):
-    if (convo.start_time >= start and convo.end_time <= end and
-        (not args.convo_id or args.convo_id == convo.id)):
-      if args.person:
-        participants = map(str, convo.participants)
-        if args.person not in participants:
-          continue
-      if args.list:
-        print('{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
-                                convo.id, convo.participants))
-      else:
-        convo.print_convo()
+  validate_file(args.logfile)
+
+  with open(args.logfile) as logfile:
+    for convo in read_hangouts(logfile, verbose_mode=args.verbose, convo_id=args.convo_id):
+      if (convo.start_time >= start and convo.end_time <= end and
+          (not args.convo_id or args.convo_id == convo.id)):
+        if args.person:
+          participants = map(str, convo.participants)
+          if args.person not in participants:
+            continue
+        if args.list:
+          print('{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
+                                  convo.id, convo.participants))
+        else:
+          convo.print_convo()
 
 
 def human_time_to_timestamp(human_time):
@@ -318,4 +319,7 @@ def human_time_to_timestamp(human_time):
 
 
 if __name__ == "__main__":
-  main(sys.argv)
+  try:
+    sys.exit(main(sys.argv))
+  except BrokenPipeError:
+    pass
