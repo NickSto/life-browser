@@ -31,7 +31,10 @@ conversation_state
 ------------------
 - a dict, containing 3 keys:
 conversation_id:	a dict mapping 'id' to the convo id (the same one as its parent)
-conversation:		a dict containing metadata about the conversation
+conversation:		a dict containing metadata about a conversation
+			- It looks like a "conversation" is usually all the messages sent between a
+			  unique set of participants. I've only once seen two conversations with the
+			  same set of participants (in the same file).
 event:			a list of the actual messages
 
 conversation
@@ -57,7 +60,11 @@ participant_data:	a list where each element seems to hold the data on one of the
 participant_data
 ----------------
 - a list, each element containing 4-6 keys:
-id
+id:			a dict holding the 'gaia_id' and 'chat_id', two numeric strings which are
+			identical in all cases I've seen.
+			- Looks like you might be able to query public APIs to look up things like
+			  real names from a gaia_id:
+			  https://stackoverflow.com/questions/27028322/how-to-look-up-user-information-from-google-gaia-id
 participant_type
 new_invitation_status
 invitation_status
@@ -122,6 +129,6 @@ formatting:		(optional) a dict of the visual formatting for the text in this seg
 			Contains 4 keys, each of which holds a boolean value:
 			'bold', 'italics', 'strikethrough', 'underline'
 link_data:		(optional) if the 'type' is 'LINK', this will be present. It will be a dict
-			containing a key 'link_target'.
+			containing a key 'link_target', and sometimes, 'display_url'.
 text:			a string that's the actual message!
 			- This may be omitted, e.g. for 'type's of 'LINE_BREAK'
