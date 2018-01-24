@@ -10,11 +10,14 @@ You can read the full license here:
 http://creativecommons.org/licenses/by-nc-sa/3.0/us/
 """
 
-import sys
 import os
-import argparse
-import json
+import sys
 import time
+import json
+import gzip
+import zipfile
+import tarfile
+import argparse
 
 from datetime import datetime
 
@@ -184,13 +187,12 @@ class Conversation(object):
           })
 
 
-def read_hangouts(logfile, verbose_mode=False, convo_id=None):
+def read_hangouts(json_data, verbose_mode=False, convo_id=None):
   """Parses the json file.
   Yields the conversation list or a complete conversation depending on the users choice."""
   if verbose_mode:
     print("Analyzing json file ...")
-  data = json.load(logfile)
-  for convo in data["conversation_state"]:
+  for convo in json_data["conversation_state"]:
     convo = _extract_convo_data(convo)
     if convo_id is None or convo.id == convo_id:
       yield convo
@@ -270,7 +272,8 @@ def main(argv):
   parser = argparse.ArgumentParser(description='Commandline python script that allows reading Google Hangouts logfiles. Version: %s' % VERSION)
   parser.set_defaults(start=0, end=9999999999)
 
-  parser.add_argument('logfile', type=str, help='filename of the logfile')
+  parser.add_argument('logfile', type=str, help='filename of the Hangouts log file. Can be a '
+    'raw or gzipped .json file, or a zip/tarball exported by Google.')
   parser.add_argument('--list', '-l', action='store_true', help='Just print the list of '
     'conversations, not their full contents. Prints one line per conversation: the start time, '
     'the id, and the list of participants.')
@@ -295,19 +298,20 @@ def main(argv):
 
   validate_file(args.logfile)
 
-  with open(args.logfile) as logfile:
-    for convo in read_hangouts(logfile, verbose_mode=args.verbose, convo_id=args.convo_id):
-      if (convo.start_time >= start and convo.end_time <= end and
-          (not args.convo_id or args.convo_id == convo.id)):
-        if args.person:
-          participants = map(str, convo.participants)
-          if args.person not in participants:
-            continue
-        if args.list:
-          print('{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
-                                  convo.id, convo.participants))
-        else:
-          convo.print_convo()
+  json_data = extract_data(args.logfile)
+
+  for convo in read_hangouts(json_data, verbose_mode=args.verbose, convo_id=args.convo_id):
+    if (convo.start_time >= start and convo.end_time <= end and
+        (not args.convo_id or args.convo_id == convo.id)):
+      if args.person:
+        participants = map(str, convo.participants)
+        if args.person not in participants:
+          continue
+      if args.list:
+        print('{} {} {}'.format(datetime.fromtimestamp(convo.start_time/1000000),
+                                convo.id, convo.participants))
+      else:
+        convo.print_convo()
 
 
 def human_time_to_timestamp(human_time):
@@ -316,6 +320,36 @@ def human_time_to_timestamp(human_time):
   except ValueError:
     dt = datetime.strptime(human_time + ' 00:00:00', '%Y-%m-%d %H:%M:%S')
   return int(time.mktime(dt.timetuple()))
+
+
+def extract_data(path):
+  if path.endswith('.json'):
+    # The raw json file.
+    with open(path) as json_file:
+      return json.load(json_file)
+  elif path.endswith('.json.gz'):
+    # A gzipped json file.
+    with gzip.open(path, mode='rt') as gzip_file:
+      return json.load(gzip_file)
+  elif path.endswith('.zip'):
+    # Assume it's a zip file exported from Google.
+    with zipfile.ZipFile(path) as zipball:
+      for member in zipball.namelist():
+        if member == 'Takeout/Hangouts/Hangouts.json':
+          json_str = str(zipball.read(member), 'utf8')
+          return json.loads(json_str)
+  elif (path.endswith('.tar.gz') or path.endswith('.tar.bz') or path.endswith('.tar.xz')
+        or path.endswith('.tgz') or path.endswith('.tbz') or path.endswith('.txz')):
+    # Assume it's a tarball exported from Google.
+    with tarfile.open(path) as tarball:
+      for member in tarball.getnames():
+        if member == 'Takeout/Hangouts/Hangouts.json':
+          json_file = tarball.extractfile(member)
+          json_str = str(json_file.read(), 'utf8')
+          return json.loads(json_str)
+  else:
+    sys.stderr.write('Error: file ending of "{}" not recognized.\n'.format(os.path.basename(path)))
+    return None
 
 
 if __name__ == "__main__":
