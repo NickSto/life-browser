@@ -17,6 +17,7 @@ import json
 import gzip
 import zipfile
 import tarfile
+import logging
 import argparse
 
 from datetime import datetime
@@ -187,11 +188,10 @@ class Conversation(object):
           })
 
 
-def read_hangouts(json_data, verbose_mode=False, convo_id=None):
+def read_hangouts(json_data, convo_id=None):
   """Parses the json file.
   Yields the conversation list or a complete conversation depending on the users choice."""
-  if verbose_mode:
-    print("Analyzing json file ...")
+  logging.info("Analyzing json file ...")
   for convo in json_data["conversation_state"]:
     convo = _extract_convo_data(convo)
     if convo_id is None or convo.id == convo_id:
@@ -279,7 +279,6 @@ def main(argv):
     'conversations, not their full contents. Prints one line per conversation: the start time, '
     'the id, and the list of participants.')
   parser.add_argument('--convo-id', '-c', type=str, help='shows the conversation with given id')
-  parser.add_argument('--verbose', '-v', action="store_true", help='activates the verbose mode')
   parser.add_argument('--start', '-s', help='Only show conversations that began later than this '
     'timestamp or date ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:DD")')
   parser.add_argument('--end', '-e', help='Only show conversations that ended earlier than this '
@@ -289,8 +288,17 @@ def main(argv):
     'it\'s considered a hit.')
   parser.add_argument('--exact-person', action='store_true', help='Make --person require an exact '
     'match.')
+  parser.add_argument('--log', '-L', type=argparse.FileType('w'), default=sys.stderr,
+    help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
+  parser.add_argument('--quiet', '-q', dest='volume', action='store_const', const=logging.CRITICAL,
+    default=logging.WARNING)
+  parser.add_argument('--verbose', '-v', dest='volume', action='store_const', const=logging.INFO)
+  parser.add_argument('--debug', '-D', dest='volume', action='store_const', const=logging.DEBUG)
 
   args = parser.parse_args()
+
+  logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
+  tone_down_logger()
 
   try:
     start = int(args.start) * 1000000
@@ -305,7 +313,7 @@ def main(argv):
 
   json_data = extract_data(args.logfile)
 
-  all_convos = read_hangouts(json_data, verbose_mode=args.verbose, convo_id=args.convo_id)
+  all_convos = read_hangouts(json_data, convo_id=args.convo_id)
   if args.sort:
     all_convos = sorted(all_convos, key=lambda c: c.start_time)
 
@@ -366,16 +374,26 @@ def extract_data(path):
           json_str = str(json_file.read(), 'utf8')
           return json.loads(json_str)
   else:
-    sys.stderr.write('Error: file ending of "{}" not recognized.\n'.format(os.path.basename(path)))
-    return None
+    fail('File ending of "{}" not recognized.'.format(os.path.basename(path)))
+
+
+def tone_down_logger():
+  """Change the logging level names from all-caps to capitalized lowercase.
+  E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
+  for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
+    level_name = logging.getLevelName(level)
+    logging.addLevelName(level, level_name.capitalize())
 
 
 def fail(message):
-  sys.stderr.write(message+"\n")
-  sys.exit(1)
+  logging.critical(message)
+  if __name__ == '__main__':
+    sys.exit(1)
+  else:
+    raise Exception('Unrecoverable error')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   try:
     sys.exit(main(sys.argv))
   except BrokenPipeError:
