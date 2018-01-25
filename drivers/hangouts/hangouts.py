@@ -92,11 +92,12 @@ class ParticipantList(object):
 
 class Event(object):
 
-  def __init__(self, id, sender_id, timestamp, message):
+  def __init__(self, id, sender_id, timestamp, message, type=None):
     self.id = id
     self.sender_id = sender_id
     self.timestamp = timestamp
     self.message = message  # a list
+    self.type = type
 
   def get_formatted_message(self):
     """Get a formatted message (the messages are joined by a space).
@@ -174,11 +175,10 @@ class Conversation(object):
   def print_convo(self, start=0, end=9999999999):
     """Prints conversations in human readable format.
     @return None"""
-    participants = self.participants
     for event in self.events:
       if not (start <= event.timestamp <= end):
         continue
-      author = participants.get_by_id(event.sender_id)
+      author = self.participants.get_by_id(event.sender_id)
       time_str = datetime.fromtimestamp(event.timestamp).strftime('%Y-%m-%d %H:%M:%S')
       print('{timestamp}: <{author}> {message}'.format(
           timestamp=time_str,
@@ -190,7 +190,7 @@ class Conversation(object):
 
 def read_hangouts(json_data, convo_id=None):
   """Parses the json file.
-  Yields the conversation list or a complete conversation depending on the users choice."""
+  A generator that yields conversations."""
   logging.info("Analyzing json file ...")
   for convo in json_data["conversation_state"]:
     convo = _extract_convo_data(convo)
@@ -227,6 +227,7 @@ def _extract_convo_data(convo):
     for event in convo["conversation_state"]["event"]:
       event_id = event["event_id"]
       sender_id = event["sender_id"]  # has dict values "gaia_id" and "chat_id"
+      # Process the timestamp.
       try:
         # The timestamps are in microseconds(!). Convert to seconds.
         timestamp = float(event["timestamp"])/1000000
@@ -237,6 +238,14 @@ def _extract_convo_data(convo):
         start_time = timestamp
       if end_time is None or timestamp > end_time:
         end_time = timestamp
+      # Is this an SMS or Hangout chat message?
+      try:
+        if event["delivery_medium"]["medium_type"] == "BABEL_MEDIUM":
+          event_type = 'chat'
+        else:
+          event_type = 'sms'
+      except KeyError:
+        event_type = None
       #TODO: Deal with HANGOUT_EVENT and VOICEMAIL.
       text = []
       try:
@@ -259,7 +268,7 @@ def _extract_convo_data(convo):
       except KeyError:
         continue  # that's okay
       # finally add the event to the event list
-      event_list.add(Event(event_id, sender_id["gaia_id"], timestamp, text))
+      event_list.add(Event(event_id, sender_id["gaia_id"], timestamp, text, type=event_type))
   except KeyError:
     raise RuntimeError("The conversation data could not be extracted.")
   return Conversation(convo_id, start_time, end_time, participant_list, event_list)
@@ -357,9 +366,6 @@ def main(argv):
         )
       )
     else:
-      #TODO: Interleave messages from different conversations chronologically.
-      #TODO: New output format: Print dates only when they change, then:
-      #      09:18:55 SMS <John Smith> => <Phil Donahue>: Hey what is the haps?
       convo.print_convo(start=start, end=end)
 
 
@@ -398,6 +404,7 @@ def extract_data(path):
           return json.loads(json_str)
   else:
     fail('File ending of "{}" not recognized.'.format(os.path.basename(path)))
+  return None
 
 
 def tone_down_logger():
