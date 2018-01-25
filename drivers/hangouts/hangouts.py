@@ -274,6 +274,34 @@ def _extract_convo_data(convo):
   return Conversation(convo_id, start_time, end_time, participant_list, event_list)
 
 
+def get_events(paths):
+  # Implement the driver interface.
+  for path in paths:
+    json_data = extract_data(path)
+    if json_data is None:
+      continue
+    for convo in read_hangouts(json_data):
+      for event in convo.events:
+        recipients = []
+        for participant in convo.participants:
+          if participant.id != event.sender_id:
+            recipients.append(str(participant))
+        yield {
+          'type': 'hangouts',
+          'timestamp': event.timestamp,
+          'subtype': event.type,
+          'lat': None,
+          'long': None,
+          'sender': convo.participants.get_by_id(event.sender_id),
+          'recipients': recipients,
+          'message': event.get_formatted_message(),
+          'raw': {
+            'conversation': convo,
+            'event': event,
+          }
+        }
+
+
 def validate_file(filename):
   """Checks if a file is valid or not.
   Raises a ValueError if the file could not be found.
