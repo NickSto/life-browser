@@ -290,9 +290,7 @@ def get_events(paths):
           'type': 'hangouts',
           'timestamp': event.timestamp,
           'subtype': event.type,
-          'lat': None,
-          'long': None,
-          'sender': convo.participants.get_by_id(event.sender_id),
+          'sender': str(convo.participants.get_by_id(event.sender_id)),
           'recipients': recipients,
           'message': event.get_formatted_message(),
           'raw': {
