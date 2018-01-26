@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import unicode_literals
 import os
 import sys
 import time
@@ -35,11 +31,13 @@ def make_argparser():
          'start of that day.')
   parser.add_argument('-e', '--end', default=9999999999,
     help='Only events from before this timestamp or date (see --start for format).')
-  parser.add_argument('-p', '--person',
-    help='Only show events involving this person. This can be a fuzzy match. If any part of a '
-         'participant\'s name matches this (case-insensitive), it\'s considered a hit.')
-  parser.add_argument('--exact-person', action='store_true',
-    help='Make --person require an exact match. It\'s still case-insensitive.')
+  # parser.add_argument('-p', '--person',
+  #   help='Only show events involving this person. This can be a fuzzy match. If any part of a '
+  #        'participant\'s name matches this (case-insensitive), it\'s considered a hit.')
+  # parser.add_argument('--exact-person', action='store_true',
+  #   help='Make --person require an exact match. It\'s still case-insensitive.')
+  parser.add_argument('-a', '--aliases', default='',
+    help='Comma-separated key=values.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
@@ -66,6 +64,8 @@ def main(argv):
   except ValueError:
     end = human_time_to_timestamp(args.end)
 
+  aliases = parse_aliases(args.aliases)
+
   events = []
 
   if args.hangouts:
@@ -82,9 +82,10 @@ def main(argv):
       continue
     if current_day_stamp is None or event.timestamp > current_day_stamp + 24*60*60:
       current_day_stamp = get_day_start(event.timestamp)
-      date = datetime.fromtimestamp(current_day_stamp).strftime('%Y-%m-%d')
+      dt = datetime.fromtimestamp(current_day_stamp)
+      date = dt.strftime('%a, {:2d} %b %Y').format(dt.day)
       print('========== '+date+' ==========')
-    print_event(event)
+    print_event(event, aliases)
 
 
 def human_time_to_timestamp(human_time):
@@ -93,6 +94,17 @@ def human_time_to_timestamp(human_time):
   except ValueError:
     dt = datetime.strptime(human_time + ' 00:00:00', '%Y-%m-%d %H:%M:%S')
   return int(time.mktime(dt.timetuple()))
+
+
+def parse_aliases(aliases_str):
+  aliases = {}
+  for keyvalue in aliases_str.split(','):
+    try:
+      alias, name = keyvalue.split('=')
+    except ValueError:
+      continue
+    aliases[alias] = name
+  return aliases
 
 
 def verify_paths(paths, type='files'):
@@ -109,7 +121,7 @@ def get_day_start(timestamp):
   return int(time.mktime(day_start_dt.timetuple()))
 
 
-def print_event(event):
+def print_event(event, aliases):
   time_str = datetime.fromtimestamp(event.timestamp).strftime('%H:%M:%S')
   if event.type == 'hangouts' or event.type == 'voice':
     if event.subtype == 'chat':
@@ -118,11 +130,14 @@ def print_event(event):
       subtype = ' SMS:'
     else:
       subtype = ':'
+    recipients = []
+    for recipient in event.recipients:
+      recipients.append(aliases.get(recipient, recipient))
     print('{timestamp}{type} {sender} -> {recipients}: {message}'.format(
       timestamp=time_str,
       type=subtype,
-      sender=event.sender,
-      recipients=', '.join(event.recipients),
+      sender=aliases.get(event.sender, event.sender),
+      recipients=', '.join(recipients),
       message=event.message
     ))
 
