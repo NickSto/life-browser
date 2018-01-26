@@ -12,6 +12,7 @@ import argparse
 from datetime import datetime
 import Event
 from drivers import hangouts
+from drivers import voice
 assert sys.version_info.major >= 3, 'Python 3 required'
 
 #TODO: Load the drivers and use them to parse the files and slice, dice, and filter the events.
@@ -22,8 +23,12 @@ manner."""
 
 def make_argparser():
   parser = argparse.ArgumentParser(description=DESCRIPTION)
-  parser.add_argument('--hangouts', nargs='+')
-  # parser.add_argument('--voice', nargs='+')
+  parser.add_argument('--hangouts', nargs='+',
+    help='Google Hangouts data. Give any number of files (.json, .json.gz, Google Takeout .zip '
+         'or tarball)')
+  parser.add_argument('--voice', nargs='+',
+    help='Google Voice data. Give any number of paths to the Voice directory of unzipped Takeout '
+         'data.')
   parser.add_argument('-s', '--start', default=0,
     help='Only show events from after this timestamp or date ("YYYY-MM-DD" or '
          '"YYYY-MM-DD HH:MM:DD"). If the date doesn\'t include a time, it\'s assumed to be the '
@@ -67,6 +72,10 @@ def main(argv):
     verify_paths(args.hangouts)
     events.extend(Event.make_events(hangouts, args.hangouts))
 
+  if args.voice:
+    verify_paths(args.voice, type='dirs')
+    events.extend(Event.make_events(voice, args.voice))
+
   current_day_stamp = None
   for event in sorted(events, key=lambda e: e.timestamp):
     if event.timestamp < start or event.timestamp > end:
@@ -86,10 +95,12 @@ def human_time_to_timestamp(human_time):
   return int(time.mktime(dt.timetuple()))
 
 
-def verify_paths(paths):
+def verify_paths(paths, type='files'):
   for path in paths:
-    if not os.path.isfile(path):
+    if type == 'files' and not os.path.isfile(path):
       fail('Error: File not found or not a regular file: "{}".'.format(path))
+    if type == 'dirs' and not os.path.isdir(path):
+      fail('Error: Directory not found or not a directory: "{}".'.format(path))
 
 
 def get_day_start(timestamp):
@@ -100,7 +111,7 @@ def get_day_start(timestamp):
 
 def print_event(event):
   time_str = datetime.fromtimestamp(event.timestamp).strftime('%H:%M:%S')
-  if event.type == 'hangouts':
+  if event.type == 'hangouts' or event.type == 'voice':
     if event.subtype == 'chat':
       subtype = ' Chat:'
     elif event.subtype == 'sms':
