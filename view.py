@@ -31,11 +31,11 @@ def make_argparser():
          'start of that day.')
   parser.add_argument('-e', '--end', default=9999999999,
     help='Only events from before this timestamp or date (see --start for format).')
-  # parser.add_argument('-p', '--person',
-  #   help='Only show events involving this person. This can be a fuzzy match. If any part of a '
-  #        'participant\'s name matches this (case-insensitive), it\'s considered a hit.')
-  # parser.add_argument('--exact-person', action='store_true',
-  #   help='Make --person require an exact match. It\'s still case-insensitive.')
+  parser.add_argument('-p', '--person',
+    help='Only show events involving this person. This can be a fuzzy match. If any part of a '
+         'participant\'s name matches this (case-insensitive), it\'s considered a hit.')
+  parser.add_argument('--exact-person', action='store_true',
+    help='Make --person require an exact match. It\'s still case-insensitive.')
   parser.add_argument('-a', '--aliases', default='',
     help='Comma-separated key=values.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
@@ -76,9 +76,14 @@ def main(argv):
     verify_paths(args.voice, type='dirs')
     events.extend(Event.make_events(voice, args.voice))
 
+  if not events:
+    fail('Error: No events! Make sure you provide at least one data source.')
+
   current_day_stamp = None
   for event in sorted(events, key=lambda e: e.timestamp):
     if event.timestamp < start or event.timestamp > end:
+      continue
+    if args.person and not person_match(event, args.person, args.exact_person):
       continue
     if current_day_stamp is None or event.timestamp > current_day_stamp + 24*60*60:
       current_day_stamp = get_day_start(event.timestamp)
@@ -119,6 +124,22 @@ def get_day_start(timestamp):
   dt = datetime.fromtimestamp(timestamp)
   day_start_dt = datetime(dt.year, dt.month, dt.day)
   return int(time.mktime(day_start_dt.timetuple()))
+
+
+def person_match(event, person, exact_person=False):
+  participants = []
+  if event.sender:
+    participants.append(event.sender.lower())
+  if event.recipients:
+    participants.extend([p.lower() for p in event.recipients])
+  if exact_person:
+    if person.lower() in participants:
+      return True
+  else:
+    for participant in participants:
+      if person.lower() in participant:
+        return True
+  return False
 
 
 def print_event(event, aliases):
