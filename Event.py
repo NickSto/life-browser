@@ -3,16 +3,16 @@ OPTIONALS = ('lat', 'long', 'accuracy', 'subtype', 'sender', 'recipients', 'mess
 
 class Event(object):
 
-  def __init__(self, type, timestamp, **kwargs):
+  def __init__(self, type, timestamp, **optionals):
     self.type = type
     self.timestamp = timestamp
     for optional in OPTIONALS:
-      setattr(self, optional, kwargs.get(optional))
+      setattr(self, optional, optionals.get(optional))
 
 
-def make_events(driver, paths):
-  for event in driver.get_events(paths):
-    kwargs = {}
+def make_events(driver, paths, **kwargs):
+  for event in driver.get_events(paths, **kwargs):
+    optionals = {}
     for optional in OPTIONALS:
-      kwargs[optional] = event.get(optional)
-    yield Event(event['type'], event['timestamp'], **kwargs)
+      optionals[optional] = event.get(optional)
+    yield Event(event['type'], event['timestamp'], **optionals)
