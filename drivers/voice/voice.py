@@ -8,7 +8,10 @@ import sys
 import time
 import errno
 import logging
+import zipfile
+import tarfile
 import argparse
+import html5lib
 from datetime import datetime
 try:
   from drivers.voice.gvoiceParser import gvParserLib
@@ -16,20 +19,20 @@ except ImportError:
   from gvoiceParser import gvParserLib
 
 
-def get_events(paths):
+def get_events(paths, mynumbers=None):
   # Implement the driver interface.
   for path in paths:
-    phones_path = os.path.join(path, 'Phones.vcf')
-    if not os.path.isfile(phones_path):
-      continue
-    mynumbers = get_mynumbers(phones_path)
-    calls_path = os.path.join(path, 'Calls')
-    for filename in os.listdir(calls_path):
-      if 'Text' not in filename:
+    archive = Archive(path)
+    if mynumbers is not None:
+      archive.mynumbers.extend(mynumbers)
+    if not archive.mynumbers:
+      raise ValueError('No numbers found in Phones.vcf. Please provide manually.')
+    for raw_record in archive:
+      if 'Text' not in raw_record.filename:
         #TODO: Real check for what type of event it is.
         continue
-      convo_path = os.path.join(calls_path, filename)
-      convo = gvParserLib.Parser.process_file(convo_path, mynumbers)
+      tree = html5lib.parse(raw_record.contents)
+      convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, archive.mynumbers)
       # Figure out who are the two people in the conversation.
       #TODO: Group texts.
       contact1 = convo.contact
@@ -61,11 +64,105 @@ def get_events(paths):
         }
 
 
-def get_mynumbers(phones_path):
-  #TODO: Replace with real .vcf parser.
-  mynumbers = []
-  with open(phones_path) as phones_file:
-    for line in phones_file:
+def get_contact_string(contact):
+  if contact.name is None:
+    return contact.phonenumber
+  elif contact.name == '###ME###':
+    return 'Me'
+  else:
+    return contact.name
+
+
+class Archive(object):
+
+  def __init__(self, archive_path, encoding='iso-8859-15'):
+    self.path = archive_path
+    self.encoding = encoding
+    self._mynumbers = None
+    # Determine the type archive we were given.
+    if os.path.isdir(self.path):
+      self.type = 'dir'
+    elif os.path.isfile(self.path):
+      if self.path.endswith('.zip'):
+        self.type = 'zip'
+      elif (self.path.endswith('.tar.gz') or self.path.endswith('.tar.bz')
+            or self.path.endswith('.tar.xz') or self.path.endswith('.tgz')
+            or self.path.endswith('.tbz') or self.path.endswith('.txz')):
+        self.type = 'tar'
+      else:
+        raise ValueError('The provided file isn\'t of a known type: "{}".'.format(self.path))
+    else:
+        raise ValueError('The provided path wasn\'t recognized: "{}".'.format(self.path))
+    self._get_files()
+
+  def _get_files(self):
+    # Get the list of files.
+    if self.type == 'dir':
+      if os.path.isdir(os.path.join(self.path, 'Voice')):
+        self.root = os.path.join(self.path, 'Voice')
+      elif os.path.isdir(os.path.join(self.path, 'Calls')):
+        self.root = self.path
+      else:
+        raise ValueError('The provided directory doesn\'t seem to contain a valid Google Voice '
+                         'archive: "{}".'.format(self.path))
+      self.files = os.listdir(os.path.join(self.root, 'Calls'))
+      self.phones_path = os.path.join(self.root, 'Phones.vcf')
+    elif self.type == 'zip':
+      self.archive_handle = zipfile.ZipFile(self.path)
+      self.files = self.archive_handle.namelist()
+      for path in self.files:
+        if path.endswith('Phones.vcf'):
+          self.phones_path = path
+    elif self.type == 'tar':
+      self.archive_handle = tarfile.open(self.path)
+      self.files = self.archive_handle.getnames()
+      for path in self.files:
+        if path.endswith('Phones.vcf'):
+          self.phones_path = path
+
+  def __iter__(self):
+    if self.type == 'dir':
+      for filename in self.files:
+        raw_record = RawRecord(filename=filename)
+        path = os.path.join(self.root, 'Calls', filename)
+        with open(path, encoding=self.encoding) as filehandle:
+          raw_record.contents = filehandle.read()
+        yield raw_record
+    else:
+      for path in self.files:
+        if path.startswith('Takeout/Voice/Calls'):
+          raw_record = RawRecord(filename=os.path.basename(path))
+          if self.type == 'zip':
+            raw_record.contents = str(self.archive_handle.read(path), self.encoding)
+          elif self.type == 'tar':
+            filehandle = self.archive_handle.extractfile(path)
+            raw_record.contents = str(filehandle.read(), self.encoding)
+          yield raw_record
+
+  @property
+  def mynumbers(self):
+    if self._mynumbers is None:
+      if self.type == 'dir':
+        with open(self.phones_path) as phones_file:
+          self._mynumbers = self.get_mynumbers(phones_file)
+      elif self.type == 'zip':
+        phones_str = str(self.archive_handle.read(self.phones_path), 'utf8')
+        self._mynumbers = self.get_mynumbers(phones_str)
+      elif self.type == 'tar':
+        phones_file = self.archive_handle.extractfile(self.phones_path)
+        phones_str = str(phones_file.read(), 'utf8')
+        self._mynumbers = self.get_mynumbers(phones_str)
+    return self._mynumbers
+
+  @classmethod
+  def get_mynumbers(cls, phones_data):
+    #TODO: Replace with real .vcf parser.
+    mynumbers = []
+    if hasattr(phones_data, 'splitlines'):
+      phones_lines = phones_data.splitlines()
+    else:
+      phones_lines = phones_data
+    for line in phones_lines:
       try:
         key, value = line.rstrip('\r\n').split(':')
       except ValueError:
@@ -78,16 +175,13 @@ def get_mynumbers(phones_path):
         mynumbers.append(value.lstrip('+'))
       elif key.startswith('TEL;TYPE='):
         mynumbers.append(value.lstrip('+'))
-  return mynumbers
+    return mynumbers
 
 
-def get_contact_string(contact):
-  if contact.name is None:
-    return contact.phonenumber
-  elif contact.name == '###ME###':
-    return 'Me'
-  else:
-    return contact.name
+class RawRecord(object):
+  def __init__(self, filename=None, contents=None):
+    self.filename = filename
+    self.contents = contents
 
 
 DESCRIPTION = """"""
