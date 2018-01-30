@@ -36,8 +36,11 @@ def make_argparser():
          'participant\'s name matches this (case-insensitive), it\'s considered a hit.')
   parser.add_argument('--exact-person', action='store_true',
     help='Make --person require an exact match. It\'s still case-insensitive.')
+  parser.add_argument('--mynumbers',
+    help='Your phone numbers, to help identify yourself in conversations. comma-separated list.')
   parser.add_argument('-a', '--aliases', default='',
-    help='Comma-separated key=values.')
+    help='Aliases for people. Use this to convert phone numbers or Google identifiers to a name. '
+         'Give comma-separated key=values.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
@@ -73,8 +76,11 @@ def main(argv):
     events.extend(Event.make_events(hangouts, args.hangouts))
 
   if args.voice:
-    verify_paths(args.voice, type='dirs')
-    events.extend(Event.make_events(voice, args.voice))
+    mynumbers = []
+    if args.mynumbers:
+      mynumbers = args.mynumbers.split(',')
+    verify_paths(args.voice, type='both')
+    events.extend(Event.make_events(voice, args.voice, mynumbers=mynumbers))
 
   if not events:
     fail('Error: No events! Make sure you provide at least one data source.')
@@ -118,6 +124,8 @@ def verify_paths(paths, type='files'):
       fail('Error: File not found or not a regular file: "{}".'.format(path))
     if type == 'dirs' and not os.path.isdir(path):
       fail('Error: Directory not found or not a directory: "{}".'.format(path))
+    if type == 'both' and not (os.path.isfile(path) or os.path.isdir(path)):
+      fail('Error: Path not found or invalid path: "{}".'.format(path))
 
 
 def get_day_start(timestamp):
