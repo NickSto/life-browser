@@ -27,39 +27,27 @@ def get_events(paths, mynumbers=None):
       archive.mynumbers.extend(mynumbers)
     if not archive.mynumbers:
       raise ValueError('No numbers found in Phones.vcf. Please provide manually.')
+      #TODO: Maybe just insert one empty number, to make it function? It apparently works.
     for raw_record in archive:
-      if 'Text' not in raw_record.filename:
-        #TODO: Real check for what type of event it is.
+      if ' - Text - ' not in raw_record.filename:
+        #TODO: Real check for what type of record it is.
         continue
       tree = html5lib.parse(raw_record.contents)
       convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, archive.mynumbers)
-      # Figure out who are the two people in the conversation.
-      #TODO: Group texts.
-      contact1 = convo.contact
       for message in convo:
-        if message.receiver != contact1:
-          contact2 = message.receiver
-          break
-      for message in convo:
-        if message.receiver == contact1:
-          receiver = contact1
-          sender = contact2
-        else:
-          receiver = contact2
-          sender = contact1
         yield {
           'type': 'voice',
           #TODO: Check timezone awareness.
           'timestamp': int(time.mktime(message.date.timetuple())),
           'subtype': 'sms',
-          'sender': get_contact_string(sender),
-          'recipients': (get_contact_string(receiver),),
+          'sender': get_contact_string(message.contact),
+          'recipients': [get_contact_string(c) for c in message.recipients],
           'message': message.text,
           'raw': {
             'conversation': convo,
             'event': message,
-            'sender': sender,
-            'receiver': receiver,
+            'sender': message.contact,
+            'recipients': message.recipients,
           }
         }
 
@@ -191,6 +179,8 @@ def make_argparser():
   parser = argparse.ArgumentParser(description=DESCRIPTION)
   parser.add_argument('record', metavar='record.html',
     help='')
+  parser.add_argument('-m', '--mynumbers', default='',
+    help='Comma-delimited.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
@@ -208,8 +198,19 @@ def main(argv):
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
 
-  for message in gvParserLib.Parser.process_file(args.record, {}):
-    print(message)
+  mynumbers = args.mynumbers.split(',')
+
+  convo = gvParserLib.Parser.process_file(args.record, mynumbers)
+  print('Contact: {} ({})'.format(convo.contact.name, convo.contact.phonenumber))
+  for message in convo:
+    recipients = ['{} ({})'.format(c.name, c.phonenumber) for c in message.recipients]
+    print('{} {} ({}) => {}:\n\t{}'.format(
+      message.date,
+      message.contact.name,
+      message.contact.phonenumber,
+      ', '.join(recipients),
+      message.text
+    ))
 
 
 def tone_down_logger():
