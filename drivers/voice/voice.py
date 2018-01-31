@@ -36,10 +36,10 @@ def get_events(paths, mynumbers=None):
       convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, archive.mynumbers)
       for message in convo:
         yield {
-          'type': 'voice',
+          'stream': 'sms',
+          'format': 'voice',
           #TODO: Check timezone awareness.
           'timestamp': int(time.mktime(message.date.timetuple())),
-          'subtype': 'sms',
           'sender': get_contact_string(message.contact),
           'recipients': [get_contact_string(c) for c in message.recipients],
           'message': message.text,

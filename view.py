@@ -152,19 +152,19 @@ def person_match(event, person, exact_person=False):
 
 def print_event(event, aliases):
   time_str = datetime.fromtimestamp(event.timestamp).strftime('%H:%M:%S')
-  if event.type == 'hangouts' or event.type == 'voice':
-    if event.subtype == 'chat':
-      subtype = ' Chat:'
-    elif event.subtype == 'sms':
-      subtype = ' SMS:'
+  if event.format == 'hangouts' or event.format == 'voice':
+    if event.stream == 'chat':
+      stream = ' Chat:'
+    elif event.stream == 'sms':
+      stream = ' SMS:'
     else:
-      subtype = ':'
+      stream = ':'
     recipients = []
     for recipient in event.recipients:
       recipients.append(aliases.get(recipient, recipient))
     print('{timestamp}{type} {sender} -> {recipients}: {message}'.format(
       timestamp=time_str,
-      type=subtype,
+      type=stream,
       sender=aliases.get(event.sender, event.sender),
       recipients=', '.join(recipients),
       message=event.message

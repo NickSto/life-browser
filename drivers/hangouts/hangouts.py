@@ -287,7 +287,8 @@ def get_events(paths):
           if participant.id != event.sender_id:
             recipients.append(str(participant))
         yield {
-          'type': 'hangouts',
+          'stream': event.type,
+          'format': 'hangouts',
           'timestamp': event.timestamp,
           'subtype': event.type,
           'sender': str(convo.participants.get_by_id(event.sender_id)),
