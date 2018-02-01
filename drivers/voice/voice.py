@@ -28,7 +28,8 @@ def get_events(paths, mynumbers=None):
     if mynumbers:
       this_mynumbers.extend(mynumbers)
     if not this_mynumbers:
-      logging.warning('No numbers of yours found in Phones.vcf.')
+      logging.warning('No numbers of yours provided. May have problems identifying you in '
+                      'conversations.')
     for raw_record in archive:
       if ' - Text - ' not in raw_record.filename:
         #TODO: Real check for what type of record it is.
@@ -64,9 +65,10 @@ def get_contact_string(contact):
 
 class Archive(object):
 
-  def __init__(self, archive_path, encoding='iso-8859-15'):
+  def __init__(self, archive_path, phones_path=None, encoding='iso-8859-15'):
     self.path = archive_path
     self.encoding = encoding
+    self.phones_path = phones_path
     self._mynumbers = None
     # Determine the type archive we were given.
     if os.path.isdir(self.path):
@@ -95,19 +97,18 @@ class Archive(object):
         raise ValueError('The provided directory doesn\'t seem to contain a valid Google Voice '
                          'archive: "{}".'.format(self.path))
       self.files = os.listdir(os.path.join(self.root, 'Calls'))
-      self.phones_path = os.path.join(self.root, 'Phones.vcf')
-    elif self.type == 'zip':
-      self.archive_handle = zipfile.ZipFile(self.path)
-      self.files = self.archive_handle.namelist()
-      for path in self.files:
-        if path.endswith('Phones.vcf'):
-          self.phones_path = path
-    elif self.type == 'tar':
-      self.archive_handle = tarfile.open(self.path)
-      self.files = self.archive_handle.getnames()
-      for path in self.files:
-        if path.endswith('Phones.vcf'):
-          self.phones_path = path
+      self.phones_path = self.phones_path or os.path.join(self.root, 'Phones.vcf')
+    elif self.type in ('zip', 'tar'):
+      if self.type == 'zip':
+        self.archive_handle = zipfile.ZipFile(self.path)
+        self.files = self.archive_handle.namelist()
+      elif self.type == 'tar':
+        self.archive_handle = tarfile.open(self.path)
+        self.files = self.archive_handle.getnames()
+      if self.phones_path is None:
+        for path in self.files:
+          if path.endswith('Phones.vcf'):
+            self.phones_path = path
 
   def __iter__(self):
     if self.type == 'dir':
@@ -131,7 +132,10 @@ class Archive(object):
   @property
   def mynumbers(self):
     if self._mynumbers is None:
-      if self.type == 'dir':
+      if not self.phones_path or (self.type == 'dir' and not os.path.isfile(self.phones_path)):
+        logging.warning('Could not find a Phones.vcf.')
+        self._mynumbers = []
+      elif self.type == 'dir':
         with open(self.phones_path) as phones_file:
           self._mynumbers = self.get_mynumbers(phones_file)
       elif self.type == 'zip':
