@@ -76,8 +76,9 @@ def main(argv):
     events.extend(Event.make_events(hangouts, args.hangouts))
 
   if args.voice:
-    mynumbers = []
-    if args.mynumbers:
+    if args.mynumbers is None:
+      mynumbers = []
+    else:
       mynumbers = args.mynumbers.split(',')
     verify_paths(args.voice, type='both')
     events.extend(Event.make_events(voice, args.voice, mynumbers=mynumbers))
@@ -166,7 +167,7 @@ def print_event(event, aliases):
       timestamp=time_str,
       type=stream,
       sender=aliases.get(event.sender, event.sender),
-      recipients=', '.join(recipients),
+      recipients=', '.join(list(set(recipients))),
       message=event.message
     ))
 

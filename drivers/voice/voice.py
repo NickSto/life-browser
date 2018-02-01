@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
@@ -23,17 +23,18 @@ def get_events(paths, mynumbers=None):
   # Implement the driver interface.
   for path in paths:
     archive = Archive(path)
-    if mynumbers is not None:
-      archive.mynumbers.extend(mynumbers)
-    if not archive.mynumbers:
-      raise ValueError('No numbers found in Phones.vcf. Please provide manually.')
-      #TODO: Maybe just insert one empty number, to make it function? It apparently works.
+    this_mynumbers = []
+    this_mynumbers.extend(archive.mynumbers)
+    if mynumbers:
+      this_mynumbers.extend(mynumbers)
+    if not this_mynumbers:
+      logging.warning('No numbers of yours found in Phones.vcf.')
     for raw_record in archive:
       if ' - Text - ' not in raw_record.filename:
         #TODO: Real check for what type of record it is.
         continue
       tree = html5lib.parse(raw_record.contents)
-      convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, archive.mynumbers)
+      convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, this_mynumbers)
       for message in convo:
         yield {
           'stream': 'sms',
@@ -179,7 +180,7 @@ def make_argparser():
   parser = argparse.ArgumentParser(description=DESCRIPTION)
   parser.add_argument('record', metavar='record.html',
     help='')
-  parser.add_argument('-m', '--mynumbers', default='',
+  parser.add_argument('-m', '--mynumbers',
     help='Comma-delimited.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
@@ -198,9 +199,15 @@ def main(argv):
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   tone_down_logger()
 
-  mynumbers = args.mynumbers.split(',')
+  if args.mynumbers is None:
+    mynumbers = []
+  else:
+    mynumbers = args.mynumbers.split(',')
 
-  convo = gvParserLib.Parser.process_file(args.record, mynumbers)
+  with open(args.record, encoding='iso-8859-15') as record_file:
+    tree = html5lib.parse(record_file.read())
+    convo = gvParserLib.Parser.process_tree(tree, args.record, mynumbers)
+
   print('Contact: {} ({})'.format(convo.contact.name, convo.contact.phonenumber))
   for message in convo:
     recipients = ['{} ({})'.format(c.name, c.phonenumber) for c in message.recipients]
