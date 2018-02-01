@@ -212,7 +212,7 @@ def main(argv):
     tree = html5lib.parse(record_file.read())
     convo = gvParserLib.Parser.process_tree(tree, args.record, mynumbers)
 
-  print('Contact: {} ({})'.format(convo.contact.name, convo.contact.phonenumber))
+  print('Conversation contact: {} ({})'.format(convo.contact.name, convo.contact.phonenumber))
   for message in convo:
     recipients = ['{} ({})'.format(c.name, c.phonenumber) for c in message.recipients]
     print('{} {} ({}) => {}:\n\t{}'.format(
