@@ -57,7 +57,7 @@ def get_events(paths, mynumbers=None):
 def get_contact_string(contact):
   if contact.name is None:
     return contact.phonenumber
-  elif contact.name == '###ME###':
+  elif contact.is_me:
     return 'Me'
   else:
     return contact.name
