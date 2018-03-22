@@ -92,11 +92,12 @@ class ParticipantList(object):
 
 class Event(object):
 
-  def __init__(self, id, sender_id, timestamp, message, type=None):
+  def __init__(self, id, sender_id, timestamp, message, links=(), type=None):
     self.id = id
     self.sender_id = sender_id
     self.timestamp = timestamp
     self.message = message  # a list
+    self.links = links
     self.type = type
 
   def get_formatted_message(self):
@@ -248,14 +249,23 @@ def _extract_convo_data(convo):
         event_type = None
       #TODO: Deal with HANGOUT_EVENT and VOICEMAIL.
       text = []
+      links = []
       try:
         message_content = event["chat_message"]["message_content"]
         try:
           for segment in message_content["segment"]:
             if segment["type"] == "LINE_BREAK":
               text.append('\n')
-            elif segment["type"] in ("TEXT", "LINK"):
+            elif segment["type"] == "TEXT":
               text.append(segment["text"])
+            elif segment["type"] == "LINK":
+              # Store in the "links" list.
+              # "LINK" segments also have a "link_data" dict that may contain "link_target" and/or
+              # "display_url". The "link_target" seems to always be a google.com url that redirects
+              # to the actual link (unless it's an email address, in which case it's a mailto:).
+              # When present the "display_url" seems to always be the same as the "text".
+              text.append(segment["text"])
+              links.append(segment["text"])
         except KeyError:
           pass  # may happen when there is no (compatible) attachment
         try:
@@ -268,7 +278,7 @@ def _extract_convo_data(convo):
       except KeyError:
         continue  # that's okay
       # finally add the event to the event list
-      event_list.add(Event(event_id, sender_id["gaia_id"], timestamp, text, type=event_type))
+      event_list.add(Event(event_id, sender_id["gaia_id"], timestamp, text, links=links, type=event_type))
   except KeyError:
     raise RuntimeError("The conversation data could not be extracted.")
   return Conversation(convo_id, start_time, end_time, participant_list, event_list)
