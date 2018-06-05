@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 import os
 import sys
+import imp
 import time
 import errno
 import logging
 import argparse
 from datetime import datetime
 import Event
-from drivers import hangouts
-from drivers import voice
+import drivers
 assert sys.version_info.major >= 3, 'Python 3 required'
-
-#TODO: Load the drivers and use them to parse the files and slice, dice, and filter the events.
 
 DESCRIPTION = """Parse many different formats and print events in an interleaved, chronological
 manner."""
@@ -19,18 +17,16 @@ manner."""
 
 def make_argparser():
   parser = argparse.ArgumentParser(description=DESCRIPTION)
-  parser.add_argument('--hangouts', nargs='+',
-    help='Google Hangouts data. Give any number of files (.json, .json.gz, Google Takeout .zip '
-         'or tarball)')
-  parser.add_argument('--voice', nargs='+',
-    help='Google Voice data. Give any number of paths to the Voice directory of unzipped Takeout '
-         'data.')
-  parser.add_argument('-s', '--start', default=0,
+  parser.add_argument('-s', '--stream', nargs=2, action='append', dest='streams',
+    metavar=('FORMAT', 'PATH'),
+    help='The source file(s) for a stream of data. Give two arguments: the format, and the path to '
+         'the data.')
+  parser.add_argument('-b', '--begin', default=0,
     help='Only show events from after this timestamp or date ("YYYY-MM-DD" or '
          '"YYYY-MM-DD HH:MM:DD"). If the date doesn\'t include a time, it\'s assumed to be the '
          'start of that day.')
   parser.add_argument('-e', '--end', default=9999999999,
-    help='Only events from before this timestamp or date (see --start for format).')
+    help='Only events from before this timestamp or date (see --begin for format).')
   parser.add_argument('-p', '--person',
     help='Only show events involving this person. This can be a fuzzy match. If any part of a '
          'participant\'s name matches this (case-insensitive), it\'s considered a hit.')
@@ -59,9 +55,9 @@ def main(argv):
   tone_down_logger()
 
   try:
-    start = int(args.start)
+    begin = int(args.begin)
   except ValueError:
-    start = human_time_to_timestamp(args.start)
+    begin = human_time_to_timestamp(args.begin)
   try:
     end = int(args.end)
   except ValueError:
@@ -70,25 +66,25 @@ def main(argv):
   aliases = parse_aliases(args.aliases)
 
   events = []
-
-  if args.hangouts:
-    verify_paths(args.hangouts)
-    events.extend(Event.make_events(hangouts, args.hangouts))
-
-  if args.voice:
-    if args.mynumbers is None:
-      mynumbers = []
-    else:
-      mynumbers = args.mynumbers.split(',')
-    verify_paths(args.voice, type='both')
-    events.extend(Event.make_events(voice, args.voice, mynumbers=mynumbers))
+  for format, path in args.streams:
+    driver = load_driver(format)
+    kwargs = {}
+    path_type = 'files'
+    if format == 'voice':
+      path_type = 'both'
+      if args.mynumbers is None:
+        kwargs['mynumbers'] = []
+      else:
+        kwargs['mynumbers'] = args.mynumbers.split(',')
+    verify_paths((path,), type=path_type)
+    events.extend(Event.make_events(driver, (path,), **kwargs))
 
   if not events:
     fail('Error: No events! Make sure you provide at least one data source.')
 
   current_day_stamp = None
   for event in sorted(events, key=lambda e: e.timestamp):
-    if event.timestamp < start or event.timestamp > end:
+    if event.timestamp < begin or event.timestamp > end:
       continue
     if args.person and not person_match(event, args.person, args.exact_person):
       continue
@@ -98,6 +94,18 @@ def main(argv):
       date = dt.strftime('%a, {:2d} %b %Y').format(dt.day)
       print('========== '+date+' ==========')
     print_event(event, aliases)
+
+
+def load_driver(format):
+  try:
+    file, path, desc = imp.find_module(format, drivers.__path__)
+  except ImportError:
+    fail('Error: No driver found for format {!r}.'.format(format))
+  try:
+    return imp.load_module('drivers.'+format, file, path, desc)
+  finally:
+    if file is not None:
+      file.close()
 
 
 def human_time_to_timestamp(human_time):
