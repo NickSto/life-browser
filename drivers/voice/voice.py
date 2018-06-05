@@ -17,6 +17,11 @@ try:
   from drivers.voice.gvoiceParser import gvParserLib
 except ImportError:
   from gvoiceParser import gvParserLib
+try:
+  from Event import Event
+except ImportError:
+  class Event(object):
+    pass
 
 
 METADATA = {
@@ -54,21 +59,21 @@ def get_events(path, mynumbers=None):
     tree = html5lib.parse(raw_record.contents)
     convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, this_mynumbers)
     for message in convo:
-      yield {
-        'stream': 'sms',
-        'format': 'voice',
+      yield Event(
+        stream='sms',
+        format='voice',
         #TODO: Check timezone awareness.
-        'timestamp': int(time.mktime(message.date.timetuple())),
-        'sender': get_contact_string(message.contact),
-        'recipients': [get_contact_string(c) for c in message.recipients],
-        'message': message.text,
-        'raw': {
+        timestamp=int(time.mktime(message.date.timetuple())),
+        sender=get_contact_string(message.contact),
+        recipients=[get_contact_string(c) for c in message.recipients],
+        message=message.text,
+        raw={
           'conversation': convo,
           'event': message,
           'sender': message.contact,
           'recipients': message.recipients,
         }
-      }
+      )
 
 
 def get_contact_string(contact):

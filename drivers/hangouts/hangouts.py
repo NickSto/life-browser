@@ -19,6 +19,11 @@ import zipfile
 import tarfile
 import logging
 import argparse
+try:
+  from Event import Event as LifeEvent
+except ImportError:
+  class LifeEvent(object):
+    pass
 
 from datetime import datetime
 
@@ -46,19 +51,16 @@ def get_events(path):
       for participant in convo.participants:
         if participant.id != event.sender_id:
           recipients.append(str(participant))
-      yield {
-        'stream': event.type,
-        'format': 'hangouts',
-        'timestamp': event.timestamp,
-        'subtype': event.type,
-        'sender': str(convo.participants.get_by_id(event.sender_id)),
-        'recipients': recipients,
-        'message': event.get_formatted_message(),
-        'raw': {
-          'conversation': convo,
-          'event': event,
-        }
-      }
+      yield LifeEvent(
+        stream=event.type,
+        format='hangouts',
+        timestamp=event.timestamp,
+        subtype=event.type,
+        sender=str(convo.participants.get_by_id(event.sender_id)),
+        recipients=recipients,
+        message=event.get_formatted_message(),
+        raw={'conversation':convo, 'event':event}
+      )
 
 
 class Participant(object):

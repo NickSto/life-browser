@@ -7,7 +7,6 @@ import errno
 import logging
 import argparse
 from datetime import datetime
-import Event
 import drivers
 assert sys.version_info.major >= 3, 'Python 3 required'
 
@@ -87,7 +86,7 @@ def main(argv):
       else:
         kwargs['mynumbers'] = args.mynumbers.split(',')
     # Read the data.
-    events.extend(Event.make_events(driver, path, **kwargs))
+    events.extend(driver.get_events(path, **kwargs))
 
   if not events:
     fail('Error: No events! Make sure you provide at least one data source.')
