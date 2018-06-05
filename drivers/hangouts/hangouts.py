@@ -35,6 +35,32 @@ METADATA = {
 }
 
 
+def get_events(path):
+  # Implement the driver interface.
+  json_data = extract_data(path)
+  if json_data is None:
+    return
+  for convo in read_hangouts(json_data):
+    for event in convo.events:
+      recipients = []
+      for participant in convo.participants:
+        if participant.id != event.sender_id:
+          recipients.append(str(participant))
+      yield {
+        'stream': event.type,
+        'format': 'hangouts',
+        'timestamp': event.timestamp,
+        'subtype': event.type,
+        'sender': str(convo.participants.get_by_id(event.sender_id)),
+        'recipients': recipients,
+        'message': event.get_formatted_message(),
+        'raw': {
+          'conversation': convo,
+          'event': event,
+        }
+      }
+
+
 class Participant(object):
 
   def __init__(self, gaia_id, chat_id, name, phone):
@@ -292,32 +318,6 @@ def _extract_convo_data(convo):
   except KeyError:
     raise RuntimeError("The conversation data could not be extracted.")
   return Conversation(convo_id, start_time, end_time, participant_list, event_list)
-
-
-def get_events(path):
-  # Implement the driver interface.
-  json_data = extract_data(path)
-  if json_data is None:
-    return
-  for convo in read_hangouts(json_data):
-    for event in convo.events:
-      recipients = []
-      for participant in convo.participants:
-        if participant.id != event.sender_id:
-          recipients.append(str(participant))
-      yield {
-        'stream': event.type,
-        'format': 'hangouts',
-        'timestamp': event.timestamp,
-        'subtype': event.type,
-        'sender': str(convo.participants.get_by_id(event.sender_id)),
-        'recipients': recipients,
-        'message': event.get_formatted_message(),
-        'raw': {
-          'conversation': convo,
-          'event': event,
-        }
-      }
 
 
 def validate_file(filename):
