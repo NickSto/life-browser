@@ -129,12 +129,20 @@ def make_filename_parts(url, content_type, timestamp):
   basename = re.sub(r'[^a-zA-Z0-9_.-]', '', basename)
   # Figure out the extension.
   base, ext = os.path.splitext(basename)
-  if not 4 <= len(ext) <= 5:
+  if content_type in IMAGE_TYPES:
+    # Default to using the known file extension for this content_type.
+    new_ext = '.'+IMAGE_TYPES[content_type]
+    # If it wasn't what we inferred from the url, use the whole url basename as the base and append
+    # with the extension we determined.
+    if ext != new_ext:
+      ext = new_ext
+      base = basename
+  elif not 4 <= len(ext) <= 6:
+    # The ext doesn't look like a normal filename extension.
+    # We don't know what file type it is, and there's no extension in the url.
+    # Don't assume, and just omit the extension.
     base = basename
-    if content_type in IMAGE_TYPES:
-      ext = '.'+IMAGE_TYPES[content_type]
-    else:
-      ext = ''
+    ext = ''
   # Truncate to 60 characters.
   base = base[:60]
   # If it's too short, add the timestamp.
