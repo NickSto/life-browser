@@ -13,19 +13,18 @@ assert sys.version_info.major >= 3, 'Python 3 required'
 
 DESCRIPTION = """Parse many different formats and print events in an interleaved, chronological
 manner."""
-EPILOG = """Info on data streams:
+EPILOG = """Info on data formats:
 """
 
 
 def make_argparser():
   driver_names = discover_drivers()
   parser = argparse.ArgumentParser(description=DESCRIPTION,
-                                   epilog=EPILOG+format_stream_info(driver_names),
+                                   epilog=EPILOG+format_driver_info(driver_names),
                                    formatter_class=argparse.RawDescriptionHelpFormatter)
-  parser.add_argument('-s', '--stream', nargs=2, action='append', dest='streams',
-    metavar=('FORMAT', 'PATH'),
-    help='The source file(s) for a stream of data. Give two arguments: the format, and the path to '
-         'the data. The available formats are: "'+'", "'.join(driver_names)+'".')
+  parser.add_argument('-d', '--data', nargs=2, action='append', metavar=('FORMAT', 'PATH'),
+    help='The input file/directory for a data source. Give two arguments: the format, and the path '
+         'to the data. The available formats are: "'+'", "'.join(driver_names)+'".')
   parser.add_argument('-b', '--begin', default=0,
     help='Only show events from after this timestamp or date ("YYYY-MM-DD" or '
          '"YYYY-MM-DD HH:MM:DD"). If the date doesn\'t include a time, it\'s assumed to be the '
@@ -70,9 +69,9 @@ def main(argv):
 
   aliases = parse_aliases(args.aliases)
 
-  # Read in the data for each stream..
+  # Read in the events from each dataset.
   events = []
-  for format, path in args.streams:
+  for format, path in args.data:
     # Load the driver.
     driver = load_driver(format)
     # Check the path exists and looks right.
@@ -116,7 +115,7 @@ def discover_drivers():
   return driver_names
 
 
-def format_stream_info(driver_names):
+def format_driver_info(driver_names):
   descriptions = []
   for driver_name in driver_names:
     driver = load_driver(driver_name)
