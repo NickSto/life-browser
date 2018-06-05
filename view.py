@@ -13,14 +13,19 @@ assert sys.version_info.major >= 3, 'Python 3 required'
 
 DESCRIPTION = """Parse many different formats and print events in an interleaved, chronological
 manner."""
+EPILOG = """Info on data streams:
+"""
 
 
 def make_argparser():
-  parser = argparse.ArgumentParser(description=DESCRIPTION)
+  driver_names = discover_drivers()
+  parser = argparse.ArgumentParser(description=DESCRIPTION,
+                                   epilog=EPILOG+format_stream_info(driver_names),
+                                   formatter_class=argparse.RawDescriptionHelpFormatter)
   parser.add_argument('-s', '--stream', nargs=2, action='append', dest='streams',
     metavar=('FORMAT', 'PATH'),
     help='The source file(s) for a stream of data. Give two arguments: the format, and the path to '
-         'the data. The available formats are: "'+'", "'.join(discover_drivers())+'".')
+         'the data. The available formats are: "'+'", "'.join(driver_names)+'".')
   parser.add_argument('-b', '--begin', default=0,
     help='Only show events from after this timestamp or date ("YYYY-MM-DD" or '
          '"YYYY-MM-DD HH:MM:DD"). If the date doesn\'t include a time, it\'s assumed to be the '
@@ -103,6 +108,23 @@ def discover_drivers():
     if os.path.isfile(os.path.join(parent, candidate, '__init__.py')):
       driver_names.append(candidate)
   return driver_names
+
+
+def format_stream_info(driver_names):
+  descriptions = []
+  for driver_name in driver_names:
+    driver = load_driver(driver_name)
+    description = '"'+driver_name+'"'
+    if not hasattr(driver, 'METADATA') or 'human' not in driver.METADATA:
+      descriptions.append(description)
+      continue
+    human_strings = driver.METADATA['human']
+    if 'name' in human_strings:
+      description += ' ({name})'.format(**human_strings)
+    if 'path' in human_strings:
+      description += ': Give {path}.'.format(**human_strings)
+    descriptions.append(description)
+  return '\n'.join(descriptions)
 
 
 def load_driver(format):

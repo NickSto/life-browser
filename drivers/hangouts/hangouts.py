@@ -24,6 +24,13 @@ from datetime import datetime
 
 VERSION = '0.2.1'
 
+METADATA = {
+  'human': {
+    'name': 'Google Hangouts',
+    'path': 'a .json, .json.gz, or a zip file or tarball directly from Google Takeout'
+  }
+}
+
 
 class Participant(object):
 

@@ -19,6 +19,15 @@ except ImportError:
   from gvoiceParser import gvParserLib
 
 
+METADATA = {
+  'human': {
+    'name': 'Google Voice',
+    'path': 'a zip file or tarball directly from Google Takeout, or an extracted directory of '
+            'Voice data'
+  }
+}
+
+
 def get_events(path, mynumbers=None):
   # Implement the driver interface.
   archive = Archive(path)
