@@ -19,39 +19,44 @@ except ImportError:
   from gvoiceParser import gvParserLib
 
 
-def get_events(paths, mynumbers=None):
+def get_events(path, mynumbers=None):
   # Implement the driver interface.
-  for path in paths:
-    archive = Archive(path)
-    this_mynumbers = []
-    this_mynumbers.extend(archive.mynumbers)
-    if mynumbers:
-      this_mynumbers.extend(mynumbers)
-    if not this_mynumbers:
-      logging.warning('No numbers of yours provided. May have problems identifying you in '
-                      'conversations.')
-    for raw_record in archive:
-      if ' - Text - ' not in raw_record.filename:
-        #TODO: Real check for what type of record it is.
-        continue
-      tree = html5lib.parse(raw_record.contents)
-      convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, this_mynumbers)
-      for message in convo:
-        yield {
-          'stream': 'sms',
-          'format': 'voice',
-          #TODO: Check timezone awareness.
-          'timestamp': int(time.mktime(message.date.timetuple())),
-          'sender': get_contact_string(message.contact),
-          'recipients': [get_contact_string(c) for c in message.recipients],
-          'message': message.text,
-          'raw': {
-            'conversation': convo,
-            'event': message,
-            'sender': message.contact,
-            'recipients': message.recipients,
-          }
+  archive = Archive(path)
+  this_mynumbers = []
+  this_mynumbers.extend(archive.mynumbers)
+  if mynumbers:
+    this_mynumbers.extend(mynumbers)
+  if not this_mynumbers:
+    logging.warning('No numbers of yours provided. May have problems identifying you in '
+                    'conversations.')
+  for raw_record in archive:
+    # Only process SMS messages for now.
+    #TODO: Other types of events.
+    #      So far I've observed Text, Placed, Received, Voicemail, Missed, and Recorded.
+    fields = raw_record.filename.split(' - ')
+    if len(fields) != 3:
+      logging.warning('Unexpected filename format: {!r}'.format(raw_record.filename))
+      continue
+    if fields[1] != 'Text':
+      continue
+    tree = html5lib.parse(raw_record.contents)
+    convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, this_mynumbers)
+    for message in convo:
+      yield {
+        'stream': 'sms',
+        'format': 'voice',
+        #TODO: Check timezone awareness.
+        'timestamp': int(time.mktime(message.date.timetuple())),
+        'sender': get_contact_string(message.contact),
+        'recipients': [get_contact_string(c) for c in message.recipients],
+        'message': message.text,
+        'raw': {
+          'conversation': convo,
+          'event': message,
+          'sender': message.contact,
+          'recipients': message.recipients,
         }
+      }
 
 
 def get_contact_string(contact):

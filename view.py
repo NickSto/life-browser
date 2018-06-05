@@ -20,7 +20,7 @@ def make_argparser():
   parser.add_argument('-s', '--stream', nargs=2, action='append', dest='streams',
     metavar=('FORMAT', 'PATH'),
     help='The source file(s) for a stream of data. Give two arguments: the format, and the path to '
-         'the data.')
+         'the data. The available formats are: "'+'", "'.join(discover_drivers())+'".')
   parser.add_argument('-b', '--begin', default=0,
     help='Only show events from after this timestamp or date ("YYYY-MM-DD" or '
          '"YYYY-MM-DD HH:MM:DD"). If the date doesn\'t include a time, it\'s assumed to be the '
@@ -69,15 +69,15 @@ def main(argv):
   for format, path in args.streams:
     driver = load_driver(format)
     kwargs = {}
-    path_type = 'files'
+    path_type = 'file'
     if format == 'voice':
-      path_type = 'both'
+      path_type = 'either'
       if args.mynumbers is None:
         kwargs['mynumbers'] = []
       else:
         kwargs['mynumbers'] = args.mynumbers.split(',')
-    verify_paths((path,), type=path_type)
-    events.extend(Event.make_events(driver, (path,), **kwargs))
+    verify_path(path, type=path_type)
+    events.extend(Event.make_events(driver, path, **kwargs))
 
   if not events:
     fail('Error: No events! Make sure you provide at least one data source.')
@@ -94,6 +94,15 @@ def main(argv):
       date = dt.strftime('%a, {:2d} %b %Y').format(dt.day)
       print('========== '+date+' ==========')
     print_event(event, aliases)
+
+
+def discover_drivers():
+  driver_names = []
+  parent = drivers.__path__[0]
+  for candidate in os.listdir(parent):
+    if os.path.isfile(os.path.join(parent, candidate, '__init__.py')):
+      driver_names.append(candidate)
+  return driver_names
 
 
 def load_driver(format):
@@ -127,14 +136,13 @@ def parse_aliases(aliases_str):
   return aliases
 
 
-def verify_paths(paths, type='files'):
-  for path in paths:
-    if type == 'files' and not os.path.isfile(path):
-      fail('Error: File not found or not a regular file: "{}".'.format(path))
-    if type == 'dirs' and not os.path.isdir(path):
-      fail('Error: Directory not found or not a directory: "{}".'.format(path))
-    if type == 'both' and not (os.path.isfile(path) or os.path.isdir(path)):
-      fail('Error: Path not found or invalid path: "{}".'.format(path))
+def verify_path(path, type='file'):
+  if type == 'file' and not os.path.isfile(path):
+    fail('Error: File not found or not a regular file: "{}".'.format(path))
+  if type == 'dir' and not os.path.isdir(path):
+    fail('Error: Directory not found or not a directory: "{}".'.format(path))
+  if type == 'either' and not (os.path.isfile(path) or os.path.isdir(path)):
+    fail('Error: Path not found or invalid path: "{}".'.format(path))
 
 
 def get_day_start(timestamp):
