@@ -24,6 +24,9 @@ METADATA = {
     'name': 'Google Voice',
     'path': 'a zip file or tarball directly from Google Takeout, or an extracted directory of '
             'Voice data'
+  },
+  'format': {
+    'path_type': 'either',
   }
 }
 

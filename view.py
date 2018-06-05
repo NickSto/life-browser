@@ -70,18 +70,24 @@ def main(argv):
 
   aliases = parse_aliases(args.aliases)
 
+  # Read in the data for each stream..
   events = []
   for format, path in args.streams:
+    # Load the driver.
     driver = load_driver(format)
-    kwargs = {}
+    # Check the path exists and looks right.
     path_type = 'file'
+    if hasattr(driver, 'METADATA') and 'format' in driver.METADATA:
+      path_type = driver.METADATA['format'].get('path_type', path_type)
+    verify_path(path, type=path_type)
+    # Add any special-case arguments.
+    kwargs = {}
     if format == 'voice':
-      path_type = 'either'
       if args.mynumbers is None:
         kwargs['mynumbers'] = []
       else:
         kwargs['mynumbers'] = args.mynumbers.split(',')
-    verify_path(path, type=path_type)
+    # Read the data.
     events.extend(Event.make_events(driver, path, **kwargs))
 
   if not events:

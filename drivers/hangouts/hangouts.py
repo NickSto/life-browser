@@ -28,6 +28,9 @@ METADATA = {
   'human': {
     'name': 'Google Hangouts',
     'path': 'a .json, .json.gz, or a zip file or tarball directly from Google Takeout'
+  },
+  'format': {
+    'path_type': 'either',
   }
 }
 
