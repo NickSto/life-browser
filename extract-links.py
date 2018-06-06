@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import argparse
-import collections
 import logging
 import sys
-import urllib.parse
 assert sys.version_info.major >= 3, 'Python 3 required'
 from drivers.hangouts import hangouts
 
