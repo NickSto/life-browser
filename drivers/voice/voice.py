@@ -18,9 +18,9 @@ try:
 except ImportError:
   from gvoiceParser import gvParserLib
 try:
-  from models import Event
+  from models import MessageEvent
 except ImportError:
-  class Event(object):
+  class MessageEvent(object):
     pass
 
 
@@ -34,6 +34,10 @@ METADATA = {
     'path_type': 'either',
   }
 }
+
+
+class VoiceEvent(MessageEvent):
+  pass
 
 
 def get_events(path, mynumbers=None):
@@ -59,7 +63,7 @@ def get_events(path, mynumbers=None):
     tree = html5lib.parse(raw_record.contents)
     convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, this_mynumbers)
     for message in convo:
-      yield Event(
+      yield VoiceEvent(
         stream='sms',
         format='voice',
         #TODO: Check timezone awareness.

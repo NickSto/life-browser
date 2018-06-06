@@ -20,9 +20,9 @@ import tarfile
 import logging
 import argparse
 try:
-  from models import Event as LifeEvent
+  from models import MessageEvent
 except ImportError:
-  class LifeEvent(object):
+  class MessageEvent(object):
     pass
 
 from datetime import datetime
@@ -40,6 +40,12 @@ METADATA = {
 }
 
 
+class HangoutsEvent(MessageEvent):
+  def __init__(self, stream, format, timestamp, subtype, sender, recipients, message, raw):
+    super().__init__(stream, format, timestamp, sender, recipients, message, raw=raw)
+    self.subtype = subtype
+
+
 def get_events(path):
   # Implement the driver interface.
   json_data = extract_data(path)
@@ -51,7 +57,7 @@ def get_events(path):
       for participant in convo.participants:
         if participant.id != event.sender_id:
           recipients.append(str(participant))
-      yield LifeEvent(
+      yield HangoutsEvent(
         stream=event.type,
         format='hangouts',
         timestamp=event.timestamp,
