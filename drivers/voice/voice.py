@@ -19,10 +19,13 @@ except ImportError:
   from gvoiceParser import gvParserLib
 try:
   from models import MessageEvent
+  from models import Contact
 except ImportError:
   class MessageEvent(object):
     pass
 
+
+##### Driver interface #####
 
 METADATA = {
   'human': {
@@ -68,8 +71,8 @@ def get_events(path, mynumbers=None):
         format='voice',
         #TODO: Check timezone awareness.
         start=int(time.mktime(message.date.timetuple())),
-        sender=get_contact_string(message.contact),
-        recipients=[get_contact_string(c) for c in message.recipients],
+        sender=export_contact(message.contact),
+        recipients=[export_contact(c) for c in message.recipients],
         message=message.text,
         raw={
           'conversation': convo,
@@ -80,14 +83,15 @@ def get_events(path, mynumbers=None):
       )
 
 
-def get_contact_string(contact):
-  if contact.name is None:
-    return contact.phonenumber
-  elif contact.is_me:
-    return 'Me'
-  else:
-    return contact.name
+def export_contact(voice_contact):
+  return Contact(
+    is_me=voice_contact.is_me,
+    name=voice_contact.name,
+    phone=voice_contact.phonenumber,
+  )
 
+
+##### Stand-alone part #####
 
 class Archive(object):
   #TODO: Allow reading compressed archives when the top-level filename isn't "Takeout"?

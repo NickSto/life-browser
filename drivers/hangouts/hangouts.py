@@ -21,6 +21,7 @@ import logging
 import argparse
 try:
   from models import MessageEvent
+  from models import Contact
 except ImportError:
   class MessageEvent(object):
     pass
@@ -28,6 +29,9 @@ except ImportError:
 from datetime import datetime
 
 VERSION = '0.2.1'
+
+
+##### Driver interface #####
 
 METADATA = {
   'human': {
@@ -56,17 +60,31 @@ def get_events(path):
       recipients = []
       for participant in convo.participants:
         if participant.id != event.sender_id:
-          recipients.append(str(participant))
+          recipients.append(participant_to_contact(participant))
+      sender_participant = convo.participants.get_by_id(event.sender_id)
+      sender = participant_to_contact(sender_participant)
       yield HangoutsEvent(
         stream=event.type,
         format='hangouts',
         start=event.timestamp,
         subtype=event.type,
-        sender=str(convo.participants.get_by_id(event.sender_id)),
+        sender=sender,
         recipients=recipients,
         message=event.get_formatted_message(),
         raw={'conversation':convo, 'event':event}
       )
+
+
+def participant_to_contact(participant):
+  if participant is None:
+    return None
+  return Contact(
+    name=participant.name,
+    phone=participant.phone,
+  )
+
+
+##### Parsing code #####
 
 
 class Participant(object):

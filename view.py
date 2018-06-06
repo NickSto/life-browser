@@ -208,7 +208,7 @@ def print_event(event, aliases):
       start=time_str,
       type=stream,
       sender=aliases.get(event.sender, event.sender),
-      recipients=', '.join(list(set(recipients))),
+      recipients=', '.join(map(str, list(set(recipients)))),
       message=event.message
     ))
 
