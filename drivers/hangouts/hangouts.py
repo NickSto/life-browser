@@ -41,8 +41,8 @@ METADATA = {
 
 
 class HangoutsEvent(MessageEvent):
-  def __init__(self, stream, format, timestamp, subtype, sender, recipients, message, raw):
-    super().__init__(stream, format, timestamp, sender, recipients, message, raw=raw)
+  def __init__(self, stream, format, start, subtype, sender, recipients, message, raw):
+    super().__init__(stream, format, start, sender, recipients, message, raw=raw)
     self.subtype = subtype
 
 
@@ -60,7 +60,7 @@ def get_events(path):
       yield HangoutsEvent(
         stream=event.type,
         format='hangouts',
-        timestamp=event.timestamp,
+        start=event.timestamp,
         subtype=event.type,
         sender=str(convo.participants.get_by_id(event.sender_id)),
         recipients=recipients,

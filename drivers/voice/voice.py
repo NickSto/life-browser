@@ -67,7 +67,7 @@ def get_events(path, mynumbers=None):
         stream='sms',
         format='voice',
         #TODO: Check timezone awareness.
-        timestamp=int(time.mktime(message.date.timetuple())),
+        start=int(time.mktime(message.date.timetuple())),
         sender=get_contact_string(message.contact),
         recipients=[get_contact_string(c) for c in message.recipients],
         message=message.text,

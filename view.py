@@ -92,13 +92,13 @@ def main(argv):
     fail('Error: No events! Make sure you provide at least one data source.')
 
   current_day_stamp = None
-  for event in sorted(events, key=lambda e: e.timestamp):
-    if event.timestamp < begin or event.timestamp > end:
+  for event in sorted(events, key=lambda e: e.start):
+    if event.start < begin or event.start > end:
       continue
     if args.person and not person_match(event, args.person, args.exact_person):
       continue
-    if current_day_stamp is None or event.timestamp > current_day_stamp + 24*60*60:
-      current_day_stamp = get_day_start(event.timestamp)
+    if current_day_stamp is None or event.start > current_day_stamp + 24*60*60:
+      current_day_stamp = get_day_start(event.start)
       dt = datetime.fromtimestamp(current_day_stamp)
       date = dt.strftime('%a, {:2d} %b %Y').format(dt.day)
       print('========== '+date+' ==========')
@@ -194,7 +194,7 @@ def person_match(event, person, exact_person=False):
 
 
 def print_event(event, aliases):
-  time_str = datetime.fromtimestamp(event.timestamp).strftime('%H:%M:%S')
+  time_str = datetime.fromtimestamp(event.start).strftime('%H:%M:%S')
   if event.format == 'hangouts' or event.format == 'voice':
     if event.stream == 'chat':
       stream = ' Chat:'
@@ -205,8 +205,8 @@ def print_event(event, aliases):
     recipients = []
     for recipient in event.recipients:
       recipients.append(aliases.get(recipient, recipient))
-    print('{timestamp}{type} {sender} -> {recipients}: {message}'.format(
-      timestamp=time_str,
+    print('{start}{type} {sender} -> {recipients}: {message}'.format(
+      start=time_str,
       type=stream,
       sender=aliases.get(event.sender, event.sender),
       recipients=', '.join(list(set(recipients))),

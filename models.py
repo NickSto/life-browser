@@ -9,13 +9,12 @@ OPTIONALS = ('lat', 'long', 'accuracy', 'sender', 'recipients', 'message', 'raw'
 
 class Event(object):
 
-  #TODO: Replace timestamp with "start" and "end".
-  def __init__(self, stream, format, timestamp, raw=None, **optionals):
+  def __init__(self, stream, format, start, raw=None, **optionals):
     # stream: SMS, Calls, Chats, Location, etc
     # format: Hangouts, Voice, MyTracks, Geo Tracker, etc
     self.stream = stream
     self.format = format
-    self.timestamp = timestamp
+    self.start = start
     if raw is None:
       self.raw = {}
     else:
@@ -26,8 +25,8 @@ class Event(object):
 
 class MessageEvent(Event):
 
-  def __init__(self, stream, format, timestamp, sender, recipients, message, raw=None):
-    super().__init__(stream, format, timestamp, raw=raw)
+  def __init__(self, stream, format, start, sender, recipients, message, raw=None):
+    super().__init__(stream, format, start, raw=raw)
     self.sender = sender
     self.recipients = recipients
     self.message = message
