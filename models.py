@@ -62,6 +62,20 @@ class MessageEvent(Event):
     self.recipients = recipients
     self.message = message
 
+  def __str__(self):
+    time_str = datetime.fromtimestamp(self.start).strftime('%H:%M:%S')
+    if self.stream == 'sms':
+      stream_str = ' SMS:'
+    else:
+      stream_str = ' {}:'.format(self.stream.capitalize())
+    print('{start}{type} {sender} -> {recipients}: {message}'.format(
+      start=time_str,
+      type=stream_str,
+      sender=self.sender,
+      recipients=', '.join(map(str, list(set(self.recipients)))),
+      message=self.message
+    ))
+
 
 class LocationEvent(Event):
 
