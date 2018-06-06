@@ -55,7 +55,6 @@ def main(argv):
   args = parser.parse_args(argv[1:])
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
-  tone_down_logger()
 
   try:
     begin = int(args.begin)
@@ -212,14 +211,6 @@ def print_event(event, aliases):
       recipients=', '.join(list(set(recipients))),
       message=event.message
     ))
-
-
-def tone_down_logger():
-  """Change the logging level names from all-caps to capitalized lowercase.
-  E.g. "WARNING" -> "Warning" (turn down the volume a bit in your log files)"""
-  for level in (logging.CRITICAL, logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG):
-    level_name = logging.getLevelName(level)
-    logging.addLevelName(level, level_name.capitalize())
 
 
 def fail(message):
