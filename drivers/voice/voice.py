@@ -18,7 +18,7 @@ try:
 except ImportError:
   from gvoiceParser import gvParserLib
 try:
-  from Event import Event
+  from models import Event
 except ImportError:
   class Event(object):
     pass

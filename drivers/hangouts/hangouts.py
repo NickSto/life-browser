@@ -20,7 +20,7 @@ import tarfile
 import logging
 import argparse
 try:
-  from Event import Event as LifeEvent
+  from models import Event as LifeEvent
 except ImportError:
   class LifeEvent(object):
     pass
