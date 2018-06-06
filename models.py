@@ -1,9 +1,4 @@
 
-#TODO: Put this (along with the required attributes) into __slots__. Then you can refer to the
-#      optionals inside the object with self.__slots__[3:].
-#      But note that subclasses must also declare their __slots__ for it to take effect in them.
-OPTIONALS = ('lat', 'long', 'accuracy', 'sender', 'recipients', 'message', 'raw')
-
 #TODO: Put stream-specific code in subclasses: Move print formatting from view.py to __str__()
 #      functions, and make __eq__() functions (for deduplicating Events).
 
@@ -19,8 +14,6 @@ class Event(object):
       self.raw = {}
     else:
       self.raw = raw
-    for optional in OPTIONALS:
-      setattr(self, optional, optionals.get(optional))
 
 
 class MessageEvent(Event):
@@ -30,3 +23,12 @@ class MessageEvent(Event):
     self.sender = sender
     self.recipients = recipients
     self.message = message
+
+
+class LocationEvent(Event):
+
+  def __init__(self, stream, format, start, lat, long, accuracy, raw=None):
+    super().__init__(stream, format, start, raw=raw)
+    self.lat = lat
+    self.long = long
+    self.accuracy = accuracy
