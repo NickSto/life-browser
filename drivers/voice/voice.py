@@ -90,6 +90,9 @@ def get_contact_string(contact):
 
 
 class Archive(object):
+  #TODO: Allow reading compressed archives when the top-level filename isn't "Takeout"?
+  #      For example, I had one zip file where the root has been renamed from "Takeout" to
+  #      "username@gmail.com-20140113T022301Z-Voice".
 
   def __init__(self, archive_path, phones_path=None, encoding='iso-8859-15'):
     self.path = archive_path
