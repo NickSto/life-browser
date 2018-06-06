@@ -1,1 +1,6 @@
 *.pyc
+*.bak
+*.sublime-project
+*.sublime-workspace
+.venv
+__pycache__
