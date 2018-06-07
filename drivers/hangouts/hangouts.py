@@ -50,7 +50,7 @@ class HangoutsEvent(MessageEvent):
     self.subtype = subtype
 
 
-def get_events(path):
+def get_events(path, contacts=None, **kwargs):
   # Implement the driver interface.
   json_data = extract_data(path)
   if json_data is None:
@@ -60,9 +60,9 @@ def get_events(path):
       recipients = []
       for participant in convo.participants:
         if participant.id != event.sender_id:
-          recipients.append(participant_to_contact(participant))
+          recipients.append(participant_to_contact(participant, contacts))
       sender_participant = convo.participants.get_by_id(event.sender_id)
-      sender = participant_to_contact(sender_participant)
+      sender = participant_to_contact(sender_participant, contacts)
       yield HangoutsEvent(
         stream=event.type,
         format='hangouts',
@@ -75,14 +75,21 @@ def get_events(path):
       )
 
 
-def participant_to_contact(participant):
+def participant_to_contact(participant, contacts=None):
   if participant is None:
     return None
-  return Contact(
+  contact = Contact(
     name=participant.name,
     phone=participant.phone,
+    gaia_id=participant.gaia_id
   )
-
+  if contacts is None:
+    return contact
+  elif contacts.me.has_overlap(contact):
+    contacts.me.add(contact)
+    return contacts.me
+  else:
+    return contacts.add_or_merge(contact)
 
 ##### Parsing code #####
 

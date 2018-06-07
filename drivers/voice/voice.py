@@ -43,14 +43,13 @@ class VoiceEvent(MessageEvent):
   pass
 
 
-def get_events(path, mynumbers=None):
+def get_events(path, contacts=None, **kwargs):
   # Implement the driver interface.
   archive = Archive(path)
-  this_mynumbers = []
-  this_mynumbers.extend(archive.mynumbers)
-  if mynumbers:
-    this_mynumbers.extend(mynumbers)
-  if not this_mynumbers:
+  mynumbers = archive.mynumbers
+  if contacts:
+    mynumbers.extend(contacts.me['phones'].values)
+  if not mynumbers:
     logging.warning('No numbers of yours provided. May have problems identifying you in '
                     'conversations.')
   for raw_record in archive:
@@ -64,15 +63,15 @@ def get_events(path, mynumbers=None):
     if fields[1] != 'Text':
       continue
     tree = html5lib.parse(raw_record.contents)
-    convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, this_mynumbers)
+    convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, mynumbers)
     for message in convo:
       yield VoiceEvent(
         stream='sms',
         format='voice',
         #TODO: Check timezone awareness.
         start=int(time.mktime(message.date.timetuple())),
-        sender=export_contact(message.contact),
-        recipients=[export_contact(c) for c in message.recipients],
+        sender=convert_contact(message.contact, contacts),
+        recipients=[convert_contact(c, contacts) for c in message.recipients],
         message=message.text,
         raw={
           'conversation': convo,
@@ -83,12 +82,19 @@ def get_events(path, mynumbers=None):
       )
 
 
-def export_contact(voice_contact):
-  return Contact(
+def convert_contact(voice_contact, contacts=None):
+  new_contact = Contact(
     is_me=voice_contact.is_me,
     name=voice_contact.name,
     phone=voice_contact.phonenumber,
   )
+  if contacts is None:
+    return new_contact
+  elif voice_contact.is_me:
+    contacts.me.add(new_contact)
+    return contacts.me
+  else:
+    return contacts.add_or_merge(new_contact)
 
 
 ##### Stand-alone part #####

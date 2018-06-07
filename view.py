@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 import os
 import sys
 import imp
@@ -8,6 +9,7 @@ import logging
 import argparse
 from datetime import datetime
 import drivers
+import models
 assert sys.version_info.major >= 3, 'Python 3 required'
 
 DESCRIPTION = """Parse many different formats and print events in an interleaved, chronological
@@ -65,7 +67,9 @@ def main(argv):
   except ValueError:
     end = human_time_to_timestamp(args.end)
 
-  aliases = parse_aliases(args.aliases)
+  contacts = models.ContactBook()
+  parse_aliases(args.aliases, contacts)
+  parse_mynumbers(args.mynumbers, contacts)
 
   # Read in the events from each dataset.
   events = []
@@ -77,15 +81,8 @@ def main(argv):
     if hasattr(driver, 'METADATA') and 'format' in driver.METADATA:
       path_type = driver.METADATA['format'].get('path_type', path_type)
     verify_path(path, type=path_type)
-    # Add any special-case arguments.
-    kwargs = {}
-    if format == 'voice':
-      if args.mynumbers is None:
-        kwargs['mynumbers'] = []
-      else:
-        kwargs['mynumbers'] = args.mynumbers.split(',')
     # Read the data.
-    events.extend(driver.get_events(path, **kwargs))
+    events.extend(driver.get_events(path, contacts=contacts))
 
   if not events:
     fail('Error: No events! Make sure you provide at least one data source.')
@@ -101,7 +98,7 @@ def main(argv):
       dt = datetime.fromtimestamp(current_day_stamp)
       date = dt.strftime('%a, {:2d} %b %Y').format(dt.day)
       print('========== '+date+' ==========')
-    print_event(event, aliases)
+    print(event)
 
 
 def discover_drivers():
@@ -150,15 +147,34 @@ def human_time_to_timestamp(human_time):
   return int(time.mktime(dt.timetuple()))
 
 
-def parse_aliases(aliases_str):
-  aliases = {}
+def parse_aliases(aliases_str, contacts):
+  if not aliases_str:
+    return
   for keyvalue in aliases_str.split(','):
     try:
       alias, name = keyvalue.split('=')
     except ValueError:
       continue
-    aliases[alias] = name
-  return aliases
+    if re.search(r'^\d{19,23}$', alias):
+      contact = models.Contact(name=name, gaia_id=alias)
+      contact['gaia_id'].indexable = True
+    elif re.search(r'[0-9+() -]{7,25}', alias) and 7 <= len(re.sub(r'[^0-9]', '', alias)) <= 18:
+      phone = models.Contact.normalize_phone(alias)
+      contact = models.Contact(name=name, phone=phone)
+    elif re.search(r'[^:/]+@[a-zA-Z0-9.-]+', alias):
+      contact = models.Contact(name=name, email=alias)
+    else:
+      fail('Unrecognized alias type: {!r}'.format(alias))
+    contacts.add_or_merge(contact)
+
+
+def parse_mynumbers(mynumbers_str, contacts):
+  if not mynumbers_str:
+    return
+  for number in mynumbers_str.split(','):
+    phone = models.Contact.normalize_phone(number)
+    if phone not in contacts.me['phones']:
+      contacts.me['phones'].append(phone)
 
 
 def verify_path(path, type='file'):
@@ -190,27 +206,6 @@ def person_match(event, person, exact_person=False):
       if person.lower() in participant:
         return True
   return False
-
-
-def print_event(event, aliases):
-  time_str = datetime.fromtimestamp(event.start).strftime('%H:%M:%S')
-  if event.format == 'hangouts' or event.format == 'voice':
-    if event.stream == 'chat':
-      stream = ' Chat:'
-    elif event.stream == 'sms':
-      stream = ' SMS:'
-    else:
-      stream = ':'
-    recipients = []
-    for recipient in event.recipients:
-      recipients.append(aliases.get(recipient, recipient))
-    print('{start}{type} {sender} -> {recipients}: {message}'.format(
-      start=time_str,
-      type=stream,
-      sender=aliases.get(event.sender, event.sender),
-      recipients=', '.join(map(str, list(set(recipients)))),
-      message=event.message
-    ))
 
 
 def fail(message):
