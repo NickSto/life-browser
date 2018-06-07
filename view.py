@@ -194,10 +194,10 @@ def get_day_start(timestamp):
 
 def person_match(event, person, exact_person=False):
   participants = []
-  if event.sender:
-    participants.append(event.sender.lower())
+  if event.sender and event.sender.name:
+    participants = [event.sender.name.value.lower()]
   if event.recipients:
-    participants.extend([p.lower() for p in event.recipients])
+    participants.extend([p.name.value.lower() for p in event.recipients if p.name])
   if exact_person:
     if person.lower() in participants:
       return True
