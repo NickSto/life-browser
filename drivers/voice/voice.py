@@ -18,8 +18,8 @@ try:
 except ImportError:
   from gvoiceParser import gvParserLib
 try:
-  from models import MessageEvent
-  from models import Contact
+  from events import MessageEvent
+  from contacts import Contact
 except ImportError:
   class MessageEvent(object):
     pass

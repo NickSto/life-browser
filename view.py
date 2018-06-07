@@ -9,7 +9,7 @@ import logging
 import argparse
 from datetime import datetime
 import drivers
-import models
+from contacts import ContactBook, Contact
 assert sys.version_info.major >= 3, 'Python 3 required'
 
 DESCRIPTION = """Parse many different formats and print events in an interleaved, chronological
@@ -67,7 +67,7 @@ def main(argv):
   except ValueError:
     end = human_time_to_timestamp(args.end)
 
-  contacts = models.ContactBook()
+  contacts = ContactBook()
   parse_aliases(args.aliases, contacts)
   parse_mynumbers(args.mynumbers, contacts)
 
@@ -156,13 +156,13 @@ def parse_aliases(aliases_str, contacts):
     except ValueError:
       continue
     if re.search(r'^\d{19,23}$', alias):
-      contact = models.Contact(name=name, gaia_id=alias)
+      contact = Contact(name=name, gaia_id=alias)
       contact['gaia_id'].indexable = True
     elif re.search(r'[0-9+() -]{7,25}', alias) and 7 <= len(re.sub(r'[^0-9]', '', alias)) <= 18:
-      phone = models.Contact.normalize_phone(alias)
-      contact = models.Contact(name=name, phone=phone)
+      phone = Contact.normalize_phone(alias)
+      contact = Contact(name=name, phone=phone)
     elif re.search(r'[^:/]+@[a-zA-Z0-9.-]+', alias):
-      contact = models.Contact(name=name, email=alias)
+      contact = Contact(name=name, email=alias)
     else:
       fail('Unrecognized alias type: {!r}'.format(alias))
     contacts.add_or_merge(contact)
@@ -172,7 +172,7 @@ def parse_mynumbers(mynumbers_str, contacts):
   if not mynumbers_str:
     return
   for number in mynumbers_str.split(','):
-    phone = models.Contact.normalize_phone(number)
+    phone = Contact.normalize_phone(number)
     if phone not in contacts.me['phones']:
       contacts.me['phones'].append(phone)
 
