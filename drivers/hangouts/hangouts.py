@@ -78,18 +78,55 @@ def get_events(path, contacts=None, **kwargs):
 def participant_to_contact(participant, contacts=None):
   if participant is None:
     return None
-  contact = Contact(
-    name=participant.name,
-    phone=participant.phone,
-    gaia_id=participant.gaia_id
-  )
+  name = participant.name
+  phone = participant.phone
+  gaia_id = participant.gaia_id
   if contacts is None:
+    contact = Contact(name=name, phone=phone, gaia_id=gaia_id)
+    contact['gaia_id'].indexable = True
     return contact
-  elif contacts.me.has_overlap(contact):
-    contacts.me.add(contact)
-    return contacts.me
   else:
-    return contacts.add_or_merge(contact)
+    # Check if the contact already exists.
+    # First, try looking it up by name:
+    name_results = contacts.getAll('name', name)
+    for result in name_results:
+      # If we found results, add the phone number and gaia_id.
+      if phone and not result['phones'].find(phone):
+        result['phones'].append(phone)
+      if gaia_id and not result['gaia_id'] == gaia_id:
+        result['gaia_id'] = gaia_id
+        result['gaia_id'].indexable = True
+    # Then try looking up by phone number:
+    phone_results = contacts.getAll('phones', phone)
+    for result in phone_results:
+      # If we found results, add the name and gaia_id.
+      if name and not result.name:
+        result.name = name
+      if gaia_id and not result['gaia_id']:
+        result['gaia_id'] = gaia_id
+        result['gaia_id'].indexable = True
+    # Finally, try looking up by gaia_id:
+    gaia_results = contacts.getAll('gaia_id', gaia_id)
+    for result in gaia_results:
+      # If we found results, add the name and phone number.
+      if name and not result.name:
+        result.name = name
+      if phone and not result['phones'].find(phone):
+        result['phones'].append(phone)
+    # Return the first name result, first gaia result, first phone result, or if no hits,
+    # make and add a new Contact.
+    if name_results:
+      return name_results[0]
+    elif gaia_results:
+      return gaia_results[0]
+    elif phone_results:
+      return phone_results[0]
+    else:
+      contact = Contact(name=name, phone=phone, gaia_id=gaia_id)
+      contact['gaia_id'].indexable = True
+      contacts.add(contact)
+      return contact
+
 
 ##### Parsing code #####
 

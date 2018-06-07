@@ -83,18 +83,42 @@ def get_events(path, contacts=None, **kwargs):
 
 
 def convert_contact(voice_contact, contacts=None):
-  new_contact = Contact(
-    is_me=voice_contact.is_me,
-    name=voice_contact.name,
-    phone=voice_contact.phonenumber,
-  )
+  name = voice_contact.name
+  phone = voice_contact.phonenumber
   if contacts is None:
-    return new_contact
-  elif voice_contact.is_me:
-    contacts.me.add(new_contact)
-    return contacts.me
+    return Contact(is_me=voice_contact.is_me, name=name, phone=phone)
   else:
-    return contacts.add_or_merge(new_contact)
+    # Check if the contact already exists.
+    if voice_contact.is_me:
+      # It's me. Add any new data.
+      if not contacts.me.name:
+        contacts.me.name = name
+      if phone not in contacts.me['phones']:
+        contacts.me['phones'].append(phone)
+      return contacts.me
+    else:
+      # It's not me. Look up existing contacts by name and phone number.
+      # First, name:
+      name_results = contacts.getAll('name', name)
+      for result in name_results:
+        # If we found results, add the phone number.
+        if phone and not result['phones'].find(phone):
+          result['phones'].append(phone)
+      # Then the phone number:
+      phone_results = contacts.getAll('phones', phone)
+      for result in phone_results:
+        # If we found results, add the name.
+        if name and not result.name:
+          result.name = name
+      # Return the first name result, first phone result, or if no hits, make and add a new Contact.
+      if name_results:
+        return name_results[0]
+      elif phone_results:
+        return phone_results[0]
+      else:
+        contact = Contact(is_me=False, name=name, phone=phone)
+        contacts.add(contact)
+        return contact
 
 
 ##### Stand-alone part #####

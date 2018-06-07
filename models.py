@@ -39,7 +39,7 @@ class ContactBook(list):
       # Add to the index.
       for value in indexable_values:
         hits = index.get(value, [])
-        if contact not in hits:
+        if not contact.foundIn(hits):
           hits.append(contact)
         index[value] = hits
 
@@ -63,7 +63,7 @@ class ContactBook(list):
         searchable_values.append(contact_value.value)
       for value in searchable_values:
         for hit in index.get(value, ()):
-          if hit not in hits:
+          if not hit.foundIn(hits):
             # Verify the hit. The index could be out of sync with the actual values in the contacts,
             # so make sure the contact actualy has the value.
             if (plural and value in hit[key]) or (not plural and value == hit[key]):
@@ -90,10 +90,19 @@ class ContactBook(list):
       self.add(contact)
       return contact
 
-  def get(self, key, value):
+  def getAll(self, key, value):
+    if value is None:
+      return []
     if key not in self.indices:
+      return []
+    return self.indices[key].get(value, [])
+
+  def getOne(self, key, value):
+    results = self.getAll(key, value)
+    if results:
+      return results[0]
+    else:
       return None
-    return self.indices[key].get(value)
 
 
 class Contact(dict):
@@ -146,6 +155,10 @@ class Contact(dict):
     else:
       return None
 
+  def reindex(self):
+    if self.book:
+      self.book.index(self)
+
   @staticmethod
   def normalize_phone(raw_phone):
     normalized_phone = re.sub(r'[^0-9]', '', raw_phone)
@@ -174,10 +187,6 @@ class Contact(dict):
             return True
     return False
 
-  def reindex(self):
-    if self.book:
-      self.book.index(self)
-
   def add(self, other):
     """Add the data from another Contact into this one.
     In conflicts, keep the existing data.
@@ -205,6 +214,57 @@ class Contact(dict):
         # Add attributes from the other ContactValue.
         self[key].add(contact_value)
 
+  def foundIn(self, contacts):
+    """Faster way of finding a `Contact` in a list of `Contact`s than `contact in contacts`."""
+    # Use a single value to scan through the list of contacts, checking if each has that value.
+    # A true match must have that value, so it won't be missed.
+    # True negatives should be quickly eliminated without going through the whole normalization
+    # process required by a full `==` comparison.
+    # Then, after you've found a candidate, do a full `==` to check it.
+    # The best hook value would be the name.
+    if self.name:
+      hook = self.name
+      hook_key = 'name'
+    else:
+      # Otherwise, we'd prefer a singular ContactValue.
+      # Only fall back to a ContactValues list if there are no singluar values.
+      hook = None
+      hook_key = None
+      backup_hook = None
+      backup_key = None
+      for key, contact_value in self.items():
+        if isinstance(contact_value, ContactValues):
+          backup_hook = contact_value
+          backup_key = key
+        else:
+          hook = contact_value
+          hook_key = key
+          break
+    # Once you've found your hook(s), scan for matches.
+    if hook:
+      key = hook_key
+      value = hook.value
+      for contact in contacts:
+        if key in contact and contact[key].value == value:
+          # Verify the candidate match.
+          if contact == self:
+            return True
+    elif backup_hook:
+      key = backup_key
+      values = backup_hook.values
+      for contact in contacts:
+        if key in contact:
+          for value in contact[key].values:
+            if value in values:
+              # Verify the candidate match.
+              if contact == self:
+                return True
+    else:
+      # We have no values? I guess the user wants to find more empty Contacts?
+      # Fall back to old method.
+      return self in contacts
+    return False
+
   def _normalize(self):
     data = [self.is_me]
     for key in sorted(self.keys()):
@@ -213,7 +273,14 @@ class Contact(dict):
     return tuple(data)
 
   def __eq__(self, other):
-    return self._normalize() == other._normalize()
+    if self.is_me != other.is_me:
+      return False
+    if len(self) != len(other):
+      return False
+    for key, contact_value in self.items():
+      if other.get(key) != contact_value:
+        return False
+    return True
 
   def __setitem__(self, key, value):
     old_value = self.get(key)
@@ -314,7 +381,7 @@ class ContactValue(object):
 
   def __repr__(self):
     attr_strs = []
-    for attr in ('contact', 'key', 'value', 'indexable', 'attributes'):
+    for attr in ('key', 'value', 'indexable', 'attributes'):
       if not hasattr(self, attr):
         continue
       value = getattr(self, attr)
@@ -382,7 +449,14 @@ class ContactValues(ContactValue, list):
     return (self.key, self.indexable, norm_values)
 
   def __eq__(self, other):
-    return self._normalize() == other._normalize()
+    if len(self) != len(other):
+      return False
+    if self.key != other.key or self.indexable != other.indexable:
+      return False
+    for our_value, other_value in zip(self, other):
+      if our_value != other_value:
+        return False
+    return True
 
   # Overriding list methods:
 
