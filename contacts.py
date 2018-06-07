@@ -103,6 +103,14 @@ class ContactBook(list):
     else:
       return None
 
+  def formatted(self):
+    outputs = []
+    if self.me:
+      outputs.append('Me: '+self.me.formatted())
+    for contact in self:
+      outputs.append(contact.formatted())
+    return '\n'.join(outputs)
+
 
 class Contact(dict):
 
@@ -160,6 +168,8 @@ class Contact(dict):
 
   @staticmethod
   def normalize_phone(raw_phone):
+    if raw_phone is None:
+      return None
     normalized_phone = re.sub(r'[^0-9]', '', raw_phone)
     if raw_phone.startswith('+'):
       return '+'+normalized_phone

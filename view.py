@@ -90,8 +90,7 @@ def main(argv):
     fail('Error: No events! Make sure you provide at least one data source.')
 
   if args.print_contacts:
-    for contact in contacts:
-      print(contact.formatted())
+    print(contacts.formatted())
     return
 
   current_day_stamp = None
