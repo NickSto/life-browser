@@ -316,12 +316,30 @@ class Contact(dict):
   def __str__(self):
     if self.is_me:
       return 'Me'
-    elif self.name.value:
+    elif self.name:
       return str(self.name)
-    elif self.emails:
-      return str(self.emails[0])
-    elif self.phones:
-      return str(self.phones[0])
+    elif self.email:
+      return str(self.email)
+    elif self.phone:
+      return str(self.phone)
+    else:
+      candidates = [None, None, None, None]
+      for key, contact_value in self.items():
+        if not contact_value:
+          continue
+        if isinstance(contact_value, ContactValues):
+          if contact_value.indexable:
+            candidates[2] = contact_value[0]
+          else:
+            candidates[3] = contact_value[0]
+        elif contact_value.indexable:
+          candidates[0] = contact_value
+        else:
+          candidates[1] = contact_value
+      for candidate in candidates:
+        if candidate is not None:
+          return str(candidate)
+      return '???'
 
 
 # Observed types of values in VCARDs:
