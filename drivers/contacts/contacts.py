@@ -5,6 +5,10 @@ import vobject
 import sys
 assert sys.version_info.major >= 3, 'Python 3 required'
 
+
+#TODO: vobject may have a number of bugs. And there are several things not included in Google
+#      Contacts' VCF export (like custom address types). Maybe explore their csv output.
+
 DESCRIPTION = """"""
 
 
@@ -12,6 +16,8 @@ def make_argparser():
   parser = argparse.ArgumentParser(description=DESCRIPTION)
   parser.add_argument('contacts', type=argparse.FileType('r'), default=sys.stdin, nargs='?',
     help='')
+  parser.add_argument('-n', '--name',
+    help='Print the whole contact info for this person.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   volume = parser.add_mutually_exclusive_group()
@@ -29,15 +35,22 @@ def main(argv):
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
 
-  contacts_str = ''.join(fix_format(args.contacts))
+  contacts_str = ''.join(fix_vcf(args.contacts))
 
   for vcard in vobject.readComponents(contacts_str):
     names = vcard.contents.get('fn')
-    if names:
+    if not names:
+      continue
+    if args.name:
+      if args.name not in [name.value for name in names]:
+        continue
+      for key, values in vcard.contents.items():
+        print('{}:\t{}'.format(key, ', '.join([repr(str(v.value)) for v in values])))
+    else:
       print(names[0].value)
 
 
-def fix_format(lines):
+def fix_vcf(lines):
   """Workarounds for some non-standard quirks in Google Contacts vCard files."""
   # Google's VCF files include fields named "ADR;ENCODING=QUOTED-PRINTABLE".
   # The values are encoded strings which can be multi-line.
