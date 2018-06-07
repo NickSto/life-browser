@@ -42,6 +42,8 @@ def make_argparser():
   parser.add_argument('-a', '--aliases', default='',
     help='Aliases for people. Use this to convert phone numbers or Google identifiers to a name. '
          'Give comma-separated key=values.')
+  parser.add_argument('-c', '--print-contacts', action='store_true',
+    help='Just print all the contacts discovered in the input data.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   parser.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
@@ -86,6 +88,11 @@ def main(argv):
 
   if not events:
     fail('Error: No events! Make sure you provide at least one data source.')
+
+  if args.print_contacts:
+    for contact in contacts:
+      print(contact.formatted())
+    return
 
   current_day_stamp = None
   for event in sorted(events, key=lambda e: e.start):

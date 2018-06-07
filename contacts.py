@@ -341,6 +341,21 @@ class Contact(dict):
           return str(candidate)
       return '???'
 
+  def formatted(self):
+    lines = []
+    line = 'Contact '+str(self)
+    if self.is_me:
+      line += ' (me)'
+    line += ':'
+    lines.append(line)
+    keys = ['name', 'emails', 'phones']
+    keys = keys + [key for key in self.keys() if key not in keys]
+    for key in keys:
+      contact_value = self.get(key)
+      if contact_value:
+        lines.append('  '+contact_value.formatted())
+    return '\n'.join(lines)
+
 
 # Observed types of values in VCARDs:
 # N (name), FN (formal name?), EMAIL, TEL, ADR, BDAY, ORG, NOTE, URL, PHOTO, X-PHONETIC-LAST-NAME,
@@ -407,6 +422,20 @@ class ContactValue(object):
       attr_strs.append('{}={!r}'.format(attr, value))
     type_str = type(self).__name__
     return '{}({})'.format(type_str, ', '.join(attr_strs))
+
+  def formatted(self):
+    output = ''
+    if self.key:
+      output += '{}: '.format(self.key)
+    output += '{!r}'.format(self.value)
+    attr_strs = []
+    if self.indexable:
+      attr_strs.append('indexable')
+    for key, value in self.attributes.items():
+      attr_strs.append('{}: {!r}'.format(key, value))
+    if attr_strs:
+      output += ' ({})'.format(', '.join(attr_strs))
+    return output
 
 
 class ContactValues(ContactValue, list):
@@ -536,5 +565,19 @@ class ContactValues(ContactValue, list):
 
   def __str__(self):
     return ', '.join([str(v) for v in self])
+
+  def formatted(self):
+    output = ''
+    if self.key:
+      output += '{}: '.format(self.key)
+    output += '('+', '.join([repr(v) for v in self])+')'
+    attr_strs = []
+    if self.indexable:
+      attr_strs.append('indexable')
+    for key, value in self.attributes.items():
+      attr_strs.append('{}: {!r}'.format(key, value))
+    if attr_strs:
+      output += ' ({})'.format(', '.join(attr_strs))
+    return output
 
   #TODO: __repr__
