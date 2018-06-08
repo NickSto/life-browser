@@ -9,6 +9,7 @@ import logging
 import argparse
 from datetime import datetime
 import drivers
+import drivers.contacts
 from contacts import ContactBook, Contact
 assert sys.version_info.major >= 3, 'Python 3 required'
 
@@ -26,6 +27,9 @@ def make_argparser():
   parser.add_argument('-d', '--data', nargs=2, action='append', metavar=('FORMAT', 'PATH'),
     help='The input file/directory for a data source. Give two arguments: the format, and the path '
          'to the data. The available formats are: "'+'", "'.join(driver_names)+'".')
+  parser.add_argument('-c', '--contacts', type=argparse.FileType('r'),
+    help='Contacts file. At the moment, this only accepts the "Google CSV" format exported by '
+         'Google Contacts.')
   parser.add_argument('-b', '--begin', default=0,
     help='Only show events from after this timestamp or date ("YYYY-MM-DD" or '
          '"YYYY-MM-DD HH:MM:DD"). If the date doesn\'t include a time, it\'s assumed to be the '
@@ -42,7 +46,7 @@ def make_argparser():
   parser.add_argument('-a', '--aliases', default='',
     help='Aliases for people. Use this to convert phone numbers or Google identifiers to a name. '
          'Give comma-separated key=values.')
-  parser.add_argument('-c', '--print-contacts', action='store_true',
+  parser.add_argument('-C', '--print-contacts', action='store_true',
     help='Just print all the contacts discovered in the input data.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
@@ -69,7 +73,10 @@ def main(argv):
   except ValueError:
     end = human_time_to_timestamp(args.end)
 
-  contacts = ContactBook()
+  if args.contacts:
+    contacts = drivers.contacts.get_contacts(args.contacts, 'google-browser-google-csv')
+  else:
+    contacts = ContactBook()
   parse_aliases(args.aliases, contacts)
   parse_mynumbers(args.mynumbers, contacts)
 
@@ -111,6 +118,8 @@ def discover_drivers():
   driver_names = []
   parent = drivers.__path__[0]
   for candidate in os.listdir(parent):
+    if candidate == 'contacts':
+      continue
     if os.path.isfile(os.path.join(parent, candidate, '__init__.py')):
       driver_names.append(candidate)
   return driver_names

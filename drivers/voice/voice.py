@@ -84,6 +84,11 @@ def get_events(path, contacts=None, **kwargs):
 
 def convert_contact(voice_contact, contacts=None):
   #TODO: I think we're often getting phone numbers in the name field.
+  #TODO: We're still ending up with duplicate contacts. When I include the 2018-06-06 Google
+  #      Contacts export, plus all Hangouts and Voice exports (Hangouts: 2x 2018-01-30,
+  #      Voice: 2018-01-31 and 2015-09-05), I end up with 2 contacts for Amanda: one with her full
+  #      name and her phone number with the country code with and without the plus, the other with
+  #      just her first name and her number with the country code but no plus.
   name = voice_contact.name
   phone = Contact.normalize_phone(voice_contact.phonenumber)
   if contacts is None:
