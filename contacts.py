@@ -121,8 +121,10 @@ class Contact(dict):
     self.name = name
     self['phones'] = ContactValues(contact=self, key='phones', indexable=True)
     self['emails'] = ContactValues(contact=self, key='emails', indexable=True)
-    self.phone = phone
-    self.email = email
+    if phone:
+      self.phone = phone
+    if email:
+      self.email = email
     # Add any other key/value items given to the constructor.
     for key, value in kwargs.items():
       self[key] = value
