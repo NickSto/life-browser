@@ -1,6 +1,9 @@
 import re
 
 
+#TODO: A method to go through all the contacts and merge duplicates.
+#      Unsure whether to delete duplicates, since they may still be referenced by some Event.
+
 class ContactBook(list):
   def __init__(self):
     self.me = Contact(is_me=True)
@@ -168,8 +171,13 @@ class Contact(dict):
     if self.book:
       self.book.index(self)
 
+  #TODO: Match phone numbers that differ only by the inclusion of a plus, and/or a country code.
+
   @staticmethod
   def normalize_phone(raw_phone):
+    """Standardize a phone number into a common format.
+    At the moment, this just removes all non-numeric characters, with the exception of the
+    leading plus, if any."""
     if raw_phone is None:
       return None
     normalized_phone = re.sub(r'[^0-9]', '', raw_phone)
@@ -518,6 +526,9 @@ class ContactValues(ContactValue, list):
         return False
     return True
 
+  def __bool__(self):
+    return bool(len(self))
+
   # Overriding list methods:
 
   #   Adding values:
@@ -584,7 +595,7 @@ class ContactValues(ContactValue, list):
     output = ''
     if self.key:
       output += '{}: '.format(self.key)
-    output += '('+', '.join([repr(v) for v in self])+')'
+    output += ', '.join([repr(v) for v in self.values])
     attr_strs = []
     if self.indexable:
       attr_strs.append('indexable')
