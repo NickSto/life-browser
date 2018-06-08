@@ -295,7 +295,9 @@ class Contact(dict):
 
   def __setitem__(self, key, value):
     old_value = self.get(key)
-    contact_value = ContactValue.get_wrapped(value, contact=self, key=key)
+    contact_value = ContactValue.get_wrapped(value)
+    contact_value.contact = self
+    contact_value.key = key
     if old_value:
       contact_value.indexable = old_value.indexable
     super().__setitem__(key, contact_value)
