@@ -83,8 +83,9 @@ def get_events(path, contacts=None, **kwargs):
 
 
 def convert_contact(voice_contact, contacts=None):
+  #TODO: I think we're often getting phone numbers in the name field.
   name = voice_contact.name
-  phone = voice_contact.phonenumber
+  phone = Contact.normalize_phone(voice_contact.phonenumber)
   if contacts is None:
     return Contact(is_me=voice_contact.is_me, name=name, phone=phone)
   else:
