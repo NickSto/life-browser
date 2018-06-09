@@ -53,14 +53,10 @@ def get_events(path, contacts=None, **kwargs):
     logging.warning('No numbers of yours provided. May have problems identifying you in '
                     'conversations.')
   for raw_record in archive:
+    contact_name, event_type, timestamp_str = parse_filename(raw_record.filename)
     # Only process SMS messages for now.
     #TODO: Other types of events.
-    #      So far I've observed Text, Placed, Received, Voicemail, Missed, and Recorded.
-    fields = raw_record.filename.split(' - ')
-    if len(fields) != 3:
-      logging.warning('Unexpected filename format: {!r}'.format(raw_record.filename))
-      continue
-    if fields[1] != 'Text':
+    if event_type != 'Text':
       continue
     tree = html5lib.parse(raw_record.contents)
     convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, mynumbers)
@@ -244,6 +240,31 @@ class RawRecord(object):
   def __init__(self, filename=None, contents=None):
     self.filename = filename
     self.contents = contents
+
+
+def parse_filename(path):
+  filename = os.path.basename(path)
+  base, ext = os.path.splitext(filename)
+  if ext != '.html':
+    logging.warning('Unexpected filename extension {!r}: {!r}'.format(ext, filename))
+    return None, None, None
+  fields = base.split(' - ')
+  if len(fields) <= 1:
+    logging.warning('Unexpected filename (too few field): {!r}'.format(filename))
+    return None, None, None
+  timestamp_str = fields[-1]
+  # It's possible for the contact name to contain a ' - '.
+  # It's also possible to be missing the middle field (Text, Placed, Received, etc).
+  # Handling both requires checking the content of the fields.
+  # Note: All 2-field files I've seen are actually Placed or Received.
+  if fields[len(fields)-2] in ('Text', 'Placed', 'Received', 'Voicemail', 'Missed', 'Recorded'):
+    event_type = fields[len(fields)-2]
+    nfields = 3
+  else:
+    event_type = None
+    nfields = 2
+  contact_name = ' - '.join(fields[:len(fields)-nfields+1])
+  return contact_name, event_type, timestamp_str
 
 
 DESCRIPTION = """"""
