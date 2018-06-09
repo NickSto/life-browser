@@ -18,7 +18,7 @@ try:
 except ImportError:
   from gvoiceParser import gvParserLib
 try:
-  from events import MessageEvent
+  from events import CallEvent, MessageEvent
   from contacts import Contact
 except ImportError:
   class MessageEvent(object):
@@ -39,7 +39,11 @@ METADATA = {
 }
 
 
-class VoiceEvent(MessageEvent):
+class VoiceMessageEvent(MessageEvent):
+  pass
+
+
+class VoiceCallEvent(CallEvent):
   pass
 
 
@@ -53,36 +57,65 @@ def get_events(path, contacts=None, **kwargs):
     logging.warning('No numbers of yours provided. May have problems identifying you in '
                     'conversations.')
   for raw_record in archive:
-    contact_name, event_type, timestamp_str = parse_filename(raw_record.filename)
-    # Only process SMS messages for now.
-    #TODO: Other types of events.
-    #      For Placed, Received, and Missed, you get a CallRecord with a `calltype` attribute
-    #      telling you which it is. For Placed and Received, the `duration` attribute tells you how
-    #      long the call was (it's a datetime.timedelta).
-    #      Voicemail and Recorded return an AudioRecord with an `audiotype` attribute telling you
-    #      which it is. They also have a `duration` attribute. The `filename` attribute gives the
-    #      filename of the mp3 of the audio (only a filename, not a full path).
-    #      All of the above have a `contact` attribute just like the messages in a Text conversation.
-    if event_type != 'Text':
-      continue
     tree = html5lib.parse(raw_record.contents)
     convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, mynumbers)
-    for message in convo:
-      yield VoiceEvent(
-        stream='sms',
-        format='voice',
-        #TODO: Check timezone awareness.
-        start=int(time.mktime(message.date.timetuple())),
-        sender=convert_contact(message.contact, contacts),
-        recipients=[convert_contact(c, contacts) for c in message.recipients],
-        message=message.text,
-        raw={
-          'conversation': convo,
-          'event': message,
-          'sender': message.contact,
-          'recipients': message.recipients,
-        }
+    subtype = getattr(convo, 'calltype', None) or getattr(convo, 'audiotype', None)
+    if subtype is None:
+      # It's a Text conversation.
+      for message in convo:
+        kwargs = get_voice_event_args(message, contacts)
+        kwargs['raw']['conversation'] = convo
+        yield VoiceMessageEvent(
+          stream='sms',
+          sender=convert_contact(message.contact, contacts),
+          recipients=[convert_contact(c, contacts) for c in message.recipients],
+          message=message.text,
+          **kwargs
+        )
+    elif subtype in ('placed', 'received', 'missed'):
+      # It's a CallRecord of a Placed, Received, or Missed call.
+      kwargs = get_voice_event_args(convo, contacts)
+      if convo.calltype == 'placed':
+        kwargs['sender'] = contacts.me
+        kwargs['recipients'] = [convert_contact(convo.contact, contacts)]
+      else:
+        kwargs['sender'] = convert_contact(convo.contact, contacts)
+        kwargs['recipients'] = [contacts.me]
+      yield VoiceCallEvent(
+        stream='call',
+        subtype=subtype,
+        **kwargs
       )
+    else:
+      # It's an AudioRecord of a Voicemail or Recorded call.
+      # Well, actually sometimes Voicemails are CallRecords, somehow. So they won't have a filename.
+      # See the example of Google Voice - Voicemail - 2009-07-18T23_26_16Z.html
+      #TODO: Use the `filename` attribute to find the mp3 of the audio
+      #      (Note: it only gives the filename, not the full path).
+      kwargs = get_voice_event_args(convo, contacts)
+      yield VoiceCallEvent(
+        stream='call',
+        subtype=subtype,
+        sender=convert_contact(convo.contact, contacts),
+        recipients=[contacts.me],
+        **kwargs
+      )
+
+
+def get_voice_event_args(voice_record, contacts):
+  """Get the common set of constructor arguments for Voice Events."""
+  kwargs = {
+    'format': 'voice',
+    #TODO: Check timezone awareness.
+    'start': int(time.mktime(voice_record.date.timetuple())),
+    'raw': {'event': voice_record}
+  }
+  if hasattr(voice_record, 'duration'):
+    if voice_record.duration is None:
+      kwargs['end'] = kwargs['start']
+    else:
+      kwargs['end'] = int(time.mktime((voice_record.date+voice_record.duration).timetuple()))
+  return kwargs
 
 
 def convert_contact(voice_contact, contacts=None):
@@ -185,6 +218,8 @@ class Archive(object):
   def __iter__(self):
     if self.type == 'dir':
       for filename in self.files:
+        if not filename.endwith('.html'):
+          continue
         raw_record = RawRecord(filename=filename)
         path = os.path.join(self.root, 'Calls', filename)
         with open(path, encoding=self.encoding) as filehandle:
@@ -192,7 +227,7 @@ class Archive(object):
         yield raw_record
     else:
       for path in self.files:
-        if path.startswith('Takeout/Voice/Calls'):
+        if path.startswith('Takeout/Voice/Calls') and path.endswith('.html'):
           raw_record = RawRecord(filename=os.path.basename(path))
           if self.type == 'zip':
             raw_record.contents = str(self.archive_handle.read(path), self.encoding)

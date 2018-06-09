@@ -5,12 +5,13 @@ from datetime import datetime
 
 class Event(object):
 
-  def __init__(self, stream, format, start, raw=None, **optionals):
+  def __init__(self, stream, format, start, end=None, raw=None, **optionals):
     # stream: SMS, Calls, Chats, Location, etc
     # format: Hangouts, Voice, MyTracks, Geo Tracker, etc
     self.stream = stream
     self.format = format
     self.start = start
+    self.end = end
     if raw is None:
       self.raw = {}
     else:
@@ -18,7 +19,7 @@ class Event(object):
 
 
 class MessageEvent(Event):
-
+  """Messages like SMS, chats, etc."""
   def __init__(self, stream, format, start, sender, recipients, message, raw=None):
     super().__init__(stream, format, start, raw=raw)
     self.sender = sender
@@ -37,6 +38,25 @@ class MessageEvent(Event):
       sender=self.sender,
       recipients=', '.join(map(str, self.recipients)),
       message=self.message
+    )
+
+
+class CallEvent(Event):
+  """Phone calls, voicemails, video chats, etc."""
+  def __init__(self, stream, format, start, end, subtype, sender, recipients, raw=None):
+    super().__init__(stream, format, start, end=end, raw=raw)
+    self.subtype = subtype
+    self.sender = sender
+    self.recipients = recipients
+
+  def __str__(self):
+    return '{start} {type} {subtype}: {sender} -> {recipients} for {duration} sec'.format(
+      start=datetime.fromtimestamp(self.start).strftime('%H:%M:%S'),
+      type=self.stream.capitalize(),
+      subtype=self.subtype.lower(),
+      sender=self.sender,
+      recipients=', '.join(map(str, self.recipients)),
+      duration=self.end-self.start
     )
 
 
