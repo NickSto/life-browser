@@ -50,13 +50,17 @@ class CallEvent(Event):
     self.recipients = recipients
 
   def __str__(self):
-    return '{start} {type} {subtype}: {sender} -> {recipients} for {duration} sec'.format(
+    if self.subtype == 'missed':
+      duration_str = ''
+    else:
+      duration_str = ' for '+format_time(self.end-self.start)
+    return '{start} {type} {subtype}: {sender} -> {recipients}{duration}'.format(
       start=datetime.fromtimestamp(self.start).strftime('%H:%M:%S'),
       type=self.stream.capitalize(),
       subtype=self.subtype.lower(),
       sender=self.sender,
       recipients=', '.join(map(str, self.recipients)),
-      duration=self.end-self.start
+      duration=duration_str
     )
 
 
@@ -67,3 +71,26 @@ class LocationEvent(Event):
     self.lat = lat
     self.long = long
     self.accuracy = accuracy
+
+
+def format_time(total_seconds):
+  if total_seconds < 60:
+    return str(total_seconds)+' sec'
+  elif total_seconds < 60*60:
+    seconds = total_seconds % 60
+    minutes = total_seconds // 60
+    return '{}:{:02d}'.format(minutes, seconds)
+  elif total_seconds < 24*60*60:
+    seconds = total_seconds % 60
+    total_minutes = total_seconds // 60
+    minutes = total_minutes % 60
+    hours = total_minutes // 60
+    return '{}:{:02d}:{:02d}'.format(hours, minutes, seconds)
+  else:
+    seconds = total_seconds % 60
+    total_minutes = total_seconds // 60
+    minutes = total_minutes % 60
+    total_hours = total_minutes // 60
+    hours = total_hours % 60
+    days = total_hours // 24
+    return '{} days {}:{:02d}:{:02d}'.format(days, hours, minutes, seconds)
