@@ -56,6 +56,13 @@ def get_events(path, contacts=None, **kwargs):
     contact_name, event_type, timestamp_str = parse_filename(raw_record.filename)
     # Only process SMS messages for now.
     #TODO: Other types of events.
+    #      For Placed, Received, and Missed, you get a CallRecord with a `calltype` attribute
+    #      telling you which it is. For Placed and Received, the `duration` attribute tells you how
+    #      long the call was (it's a datetime.timedelta).
+    #      Voicemail and Recorded return an AudioRecord with an `audiotype` attribute telling you
+    #      which it is. They also have a `duration` attribute. The `filename` attribute gives the
+    #      filename of the mp3 of the audio (only a filename, not a full path).
+    #      All of the above have a `contact` attribute just like the messages in a Text conversation.
     if event_type != 'Text':
       continue
     tree = html5lib.parse(raw_record.contents)
@@ -93,7 +100,7 @@ def convert_contact(voice_contact, contacts=None):
     # Check if the contact already exists.
     if voice_contact.is_me:
       # It's me. Add any new data.
-      if not contacts.me.name:
+      if name != 'Me' and not contacts.me.name:
         contacts.me.name = name
       if phone not in contacts.me['phones']:
         contacts.me['phones'].append(phone)
