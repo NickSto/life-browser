@@ -14,7 +14,7 @@ class ContactBook(list):
     WARNING: This checks for membership with an exact match, so if you create a new Contact with
     the same name, phone, etc, but one attribute is different, it won't recognize them as the same.
     """
-    if contact in self:
+    if contact.foundIn(self):
       return
     contact.book = self
     self.append(contact)
