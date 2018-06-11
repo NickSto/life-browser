@@ -198,12 +198,15 @@ class ParticipantList(object):
 
 class Event(object):
 
-  def __init__(self, id, sender_id, timestamp, message, links=(), type=None):
+  def __init__(self, id, sender_id, timestamp, message, links=(), attachments=(), type=None):
     self.id = id
     self.sender_id = sender_id
     self.timestamp = timestamp
     self.message = message  # a list
+    # Urls detected in the message text.
     self.links = links
+    # Images or other media sent as the message. These are their urls.
+    self.attachments = attachments
     self.type = type
 
   def get_formatted_message(self):
@@ -356,6 +359,7 @@ def _extract_convo_data(convo):
       #TODO: Deal with HANGOUT_EVENT and VOICEMAIL.
       text = []
       links = []
+      attachments = []
       try:
         message_content = event["chat_message"]["message_content"]
         try:
@@ -378,13 +382,17 @@ def _extract_convo_data(convo):
           for attachment in message_content["attachment"]:
             # if there is a Google+ photo attachment we append the URL
             if attachment["embed_item"]["type"][0].lower() == "PLUS_PHOTO".lower():
-              text.append(attachment["embed_item"]["embeds.PlusPhoto.plus_photo"]["url"])
+              photo_url = attachment["embed_item"]["embeds.PlusPhoto.plus_photo"]["url"]
+              text.append(photo_url)
+              attachments.append(photo_url)
         except KeyError:
           pass  # may happen when there is no (compatible) attachment
       except KeyError:
         continue  # that's okay
       # finally add the event to the event list
-      event_list.add(Event(event_id, sender_id["gaia_id"], timestamp, text, links=links, type=event_type))
+      event_obj = Event(event_id, sender_id["gaia_id"], timestamp, text, links=links,
+                        attachments=attachments, type=event_type)
+      event_list.add(event_obj)
   except KeyError:
     raise RuntimeError("The conversation data could not be extracted.")
   return Conversation(convo_id, start_time, end_time, participant_list, event_list)
