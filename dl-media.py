@@ -7,6 +7,8 @@ import requests
 import sys
 import time
 import urllib.parse
+import urllib3.exceptions
+import warnings
 assert sys.version_info.major >= 3, 'Python 3 required'
 
 IMAGE_TYPES = {'image/jpeg':'jpg', 'image/gif':'gif', 'image/png':'png', 'image/pjpeg':'jpg',
@@ -49,8 +51,9 @@ def main(argv):
   args = parser.parse_args(argv[1:])
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
+  warnings.filterwarnings('ignore', category=urllib3.exceptions.InsecureRequestWarning)
 
-  metadata = read_metadata(args.metadata)
+  metadata, used_filenames = read_metadata(args.metadata)
 
   with open(args.metadata, 'a') as metafile:
     for line in args.links:
@@ -67,7 +70,7 @@ def main(argv):
         metafile.write('{}\t{}\t{}\t{}\n'.format(timestamp, content_type, '', url))
         continue
       base, ext = make_filename_parts(url, content_type, timestamp)
-      filename = make_new_filename(base, ext, args.outdir)
+      filename = make_unique_filename(base, ext, args.outdir, used_filenames)
       path = os.path.join(args.outdir, filename)
       with open(path, 'wb') as image_file:
         image_file.write(image)
@@ -77,6 +80,7 @@ def main(argv):
 
 def read_metadata(metapath):
   metadata = {}
+  used_filenames = set()
   if not os.path.exists(metapath):
     return metadata
   with open(metapath) as metafile:
@@ -87,7 +91,8 @@ def read_metadata(metapath):
       timestamp_str, content_type, filename, url = fields
       timestamp = int(timestamp_str)
       metadata[url] = {'timestamp':timestamp, 'content_type':content_type, 'filename':filename}
-  return metadata
+      used_filenames.add(filename)
+  return metadata, used_filenames
 
 
 def fix_url(url):
@@ -125,6 +130,10 @@ def make_filename_parts(url, content_type, timestamp):
   while not basename and path != '/' and path != '':
     basename = os.path.basename(path)
     path = os.path.dirname(path)
+  # Decode percent-encoded characters.
+  basename = heuristic_pct_decode(basename)
+  # Remove any query string that was percent-encoded.
+  basename = urllib.parse.urlparse(basename).path
   # Remove weird characters.
   basename = re.sub(r'[^a-zA-Z0-9_.-]', '', basename)
   # Figure out the extension.
@@ -154,11 +163,27 @@ def make_filename_parts(url, content_type, timestamp):
     return base, ext
 
 
-def make_new_filename(base, ext, outdir):
-  filenames = os.listdir(outdir)
+def heuristic_pct_decode(more_encoded_str):
+  """Percent-decode a string which may be multiply-encoded (or not at all)."""
+  for i in range(100):
+    less_encoded_str = urllib.parse.unquote(more_encoded_str)
+    if less_encoded_str == more_encoded_str:
+      return more_encoded_str
+    for char in less_encoded_str:
+      if ord(char) == 65533:
+        # It decoded into an invalid character.
+        # Probably because it isn't percent-encoded and just had a regular percent character.
+        # We've reached the end. Return the previous string.
+        return more_encoded_str
+    more_encoded_str = less_encoded_str
+
+
+def make_unique_filename(base, ext, outdir, meta_filenames):
+  """Find a filename not in use already on disk or in the metadata file."""
+  disk_filenames = os.listdir(outdir)
   i = 1
   filename = base+ext
-  while filename in filenames:
+  while filename in disk_filenames or filename in meta_filenames:
     i += 1
     filename = '{}-{}{}'.format(base, i, ext)
   return filename
