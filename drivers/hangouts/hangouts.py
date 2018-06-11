@@ -79,7 +79,7 @@ def participant_to_contact(participant, contacts=None):
   if participant is None:
     return None
   name = participant.name
-  phone = participant.phone
+  phone = Contact.normalize_phone(participant.phone)
   gaia_id = participant.gaia_id
   if contacts is None:
     contact = Contact(name=name, phone=phone, gaia_id=gaia_id)
@@ -93,7 +93,7 @@ def participant_to_contact(participant, contacts=None):
       # If we found results, add the phone number and gaia_id.
       if phone and not result['phones'].find(phone):
         result['phones'].append(phone)
-      if gaia_id and not result['gaia_id'] == gaia_id:
+      if gaia_id and not result.get('gaia_id') == gaia_id:
         result['gaia_id'] = gaia_id
         result['gaia_id'].indexable = True
     # Then try looking up by phone number:
@@ -102,7 +102,7 @@ def participant_to_contact(participant, contacts=None):
       # If we found results, add the name and gaia_id.
       if name and not result.name:
         result.name = name
-      if gaia_id and not result['gaia_id']:
+      if gaia_id and not result.get('gaia_id'):
         result['gaia_id'] = gaia_id
         result['gaia_id'].indexable = True
     # Finally, try looking up by gaia_id:
