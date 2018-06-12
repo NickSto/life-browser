@@ -1,13 +1,10 @@
 from datetime import datetime
 
-#TODO: Put stream-specific code in subclasses: Move print formatting from view.py to __str__()
-#      functions, and make __eq__() functions (for deduplicating Events).
-
 class Event(object):
 
   def __init__(self, stream, format, start, end=None, raw=None, **optionals):
-    # stream: SMS, Calls, Chats, Location, etc
-    # format: Hangouts, Voice, MyTracks, Geo Tracker, etc
+    # stream: 'sms', 'call', 'chat', 'location', 'photo', etc
+    # format: 'hangouts', 'voice', 'mytracks', 'geotracker', etc
     self.stream = stream
     self.format = format
     self.start = start
@@ -16,6 +13,31 @@ class Event(object):
       self.raw = {}
     else:
       self.raw = raw
+
+  def _generic_eq(self, other):
+    if self.start != other.start:
+      return False
+    if self.stream != other.stream:
+      return False
+    if self.format != other.format:
+      return False
+    if self.end != other.end:
+      return False
+    return True
+
+  def __eq__(self, other):
+    if not self._generic_eq(other):
+      return False
+    if self.raw != other.raw:
+      return False
+    for attr in dir(self):
+      if attr.startswith('_'):
+        continue
+      if not hasattr(other, attr):
+        return False
+      if getattr(self, attr) != getattr(other, attr):
+        return False
+    return True
 
 
 class MessageEvent(Event):
@@ -26,6 +48,7 @@ class MessageEvent(Event):
     self.recipients = recipients
     self.message = message
 
+  #TODO: Overflow for recipients like "a, b, c, and 23 others".
   def __str__(self):
     time_str = datetime.fromtimestamp(self.start).strftime('%H:%M:%S')
     if self.stream == 'sms':
@@ -39,6 +62,19 @@ class MessageEvent(Event):
       recipients=', '.join(map(str, self.recipients)),
       message=self.message
     )
+
+  def __eq__(self, other):
+    if not self._generic_eq(other):
+      return False
+    if self.message != other.message:
+      return False
+    #TODO: Is this test appropriate for Contacts? Verify that if the same event is parsed from two
+    #      different files, it'll end up with the same Contacts, after deduplication via ContactBook.
+    if self.sender != other.sender:
+      return False
+    if sorted(self.recipients) != sorted(other.recipients):
+      return False
+    return True
 
 
 class CallEvent(Event):
@@ -62,6 +98,19 @@ class CallEvent(Event):
       recipients=', '.join(map(str, self.recipients)),
       duration=duration_str
     )
+
+  def __eq__(self, other):
+    if not self._generic_eq(other):
+      return False
+    if self.subtype != other.subtype:
+      return False
+    #TODO: Is this test appropriate for Contacts? Verify that if the same event is parsed from two
+    #      different files, it'll end up with the same Contacts, after deduplication via ContactBook.
+    if self.sender != other.sender:
+      return False
+    if sorted(self.recipients) != sorted(other.recipients):
+      return False
+    return True
 
 
 class LocationEvent(Event):

@@ -49,6 +49,11 @@ class HangoutsEvent(MessageEvent):
     super().__init__(stream, format, start, sender, recipients, message, raw=raw)
     self.subtype = subtype
 
+  def __eq__(self, other):
+    if self.subtype != other.subtype:
+      return False
+    return super().__eq__(other)
+
 
 def get_events(path, contacts=None, **kwargs):
   # Implement the driver interface.
