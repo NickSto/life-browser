@@ -91,17 +91,23 @@ def main(argv):
       path_type = driver.METADATA['format'].get('path_type', path_type)
     verify_path(path, type=path_type)
     # Read the data.
-    events.extend(driver.get_events(path, contacts=contacts))
+    new_events = list(driver.get_events(path, contacts=contacts))
+    logging.info('Found {} events in {} data.'.format(len(new_events), driver.METADATA['human']['name']))
+    events.extend(new_events)
+
+  sorted_events = sorted(events, key=lambda event: event.start)
+  events = dedup_events(sorted_events)
 
   if not events:
-    fail('Error: No events! Make sure you provide at least one data source.')
+    fail('Error: No events found! Make sure you provide at least one data source.')
+  logging.warning('Found {} events.'.format(len(events)))
 
   if args.print_contacts:
     print(contacts.formatted())
     return
 
   current_day_stamp = None
-  for event in sorted(events, key=lambda e: e.start):
+  for event in events:
     if event.start < begin or event.start > end:
       continue
     if args.person and not person_match(event, args.person, args.exact_person):
@@ -199,6 +205,21 @@ def verify_path(path, type='file'):
     fail('Error: Directory not found or not a directory: "{}".'.format(path))
   if type == 'either' and not (os.path.isfile(path) or os.path.isdir(path)):
     fail('Error: Path not found or invalid path: "{}".'.format(path))
+
+
+def dedup_events(old_events):
+  """Remove duplicate events from a sorted list."""
+  new_events = []
+  last_event = None
+  for event in old_events:
+    if last_event is None:
+      duplicate = False
+    else:
+      duplicate = event == last_event
+    if not duplicate:
+      new_events.append(event)
+      last_event = event
+  return new_events
 
 
 def get_day_start(timestamp):
