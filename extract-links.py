@@ -25,6 +25,11 @@ def make_argparser():
     help='The archive file is from Google Voice.')
   parser.add_argument('-a', '--attachments', action='store_true',
     help='Extract urls of images sent in Hangouts messages instead of links in the text.')
+  parser.add_argument('-t', '--thumbs', action='store_true',
+    help='For videos, print the url to the thumbnail image instead of to the video, since the '
+         'video url requires a login and can\'t easily be automatically retrieved.')
+  parser.add_argument('-b', '--both', action='store_true',
+    help='For videos, print both the url to the video and the url to the thumbnail.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   volume = parser.add_mutually_exclusive_group()
@@ -42,21 +47,32 @@ def main(argv):
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
 
+  if args.both:
+    incl_vid_urls = True
+    incl_thumb_urls = True
+  elif args.thumbs:
+    incl_vid_urls = False
+    incl_thumb_urls = True
+  else:
+    incl_vid_urls = True
+    incl_thumb_urls = False
+
   if args.format == 'voice' and args.attachments:
     fail('Error: Cannot use both --voice and --attachments.')
 
-  for link in parse_archive(args.archive, args.format, args.attachments):
+  for link in parse_archive(args.archive, args.format, attachments=args.attachments,
+                            incl_video=incl_vid_urls, incl_thumbs=incl_thumb_urls):
     print(link)
 
 
-def parse_archive(archive_path, format, attachments=False):
+def parse_archive(archive_path, format, **kwargs):
   if format == 'hangouts':
-    return parse_hangouts(archive_path, attachments=attachments)
+    return parse_hangouts(archive_path, **kwargs)
   elif format == 'voice':
-    return parse_voice(archive_path)
+    return parse_voice(archive_path, **kwargs)
 
 
-def parse_hangouts(archive_path, attachments=False):
+def parse_hangouts(archive_path, attachments=False, incl_video=True, incl_thumbs=False, **kwargs):
   data = hangouts.extract_data(archive_path)
   if data is None:
     fail('No Hangouts data found!')
@@ -65,13 +81,19 @@ def parse_hangouts(archive_path, attachments=False):
     for event in convo.events:
       if attachments:
         for attachment in event.attachments:
-          yield attachment
+          if attachment.type == 'video':
+            if incl_video:
+              yield attachment.video
+            if incl_thumbs:
+              yield attachment.image
+          elif attachment.type == 'image':
+            yield attachment.image
       else:
         for link in event.links:
           yield link
 
 
-def parse_voice(archive_path):
+def parse_voice(archive_path, **kwargs):
   archive = voice.Archive(archive_path)
   for raw_record in archive:
     tree = html5lib.parse(raw_record.contents)
@@ -79,8 +101,6 @@ def parse_voice(archive_path):
     try:
       for message in convo:
         text = message.text
-        if 'googleusercontent' in text:
-          print('testing {}'.format(text))
         if is_url(text):
           yield text
     except TypeError:
