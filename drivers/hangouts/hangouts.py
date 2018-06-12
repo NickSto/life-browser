@@ -196,6 +196,15 @@ class ParticipantList(object):
     return ', '.join(map(str, self.p_list.values()))
 
 
+class Attachment(object):
+
+  def __init__(self, type, image=None, video=None, audio=None):
+    self.type = type
+    self.image = image # url
+    self.video = video # url
+    self.audio = audio # url
+
+
 class Event(object):
 
   def __init__(self, id, sender_id, timestamp, message, links=(), attachments=(), type=None):
@@ -377,19 +386,26 @@ def _extract_convo_data(convo):
               text.append(segment["text"])
               links.append(segment["text"])
         except KeyError:
-          pass  # may happen when there is no (compatible) attachment
+          pass  # may happen when there is no segment
         try:
           for attachment in message_content["attachment"]:
-            # if there is a Google+ photo attachment we append the URL
+            # Note: This does not currently catch all attachments. It only gets Google photos
+            # and videos (and even then, it doesn't get a url you can download the video from).
             if attachment["embed_item"]["type"][0].lower() == "PLUS_PHOTO".lower():
-              photo_url = attachment["embed_item"]["embeds.PlusPhoto.plus_photo"]["url"]
-              text.append(photo_url)
-              attachments.append(photo_url)
+              media = attachment["embed_item"]["embeds.PlusPhoto.plus_photo"]
+              if media['media_type'] == 'VIDEO':
+                # Video urls seem to lead to a series of redirects that won't work if you're not
+                # logged into Google.
+                attachments.append(Attachment('video', image=media['url'], video=media['thumbnail']['url']))
+                media_url = media['thumbnail']['url']
+              else:
+                attachments.append(Attachment('image', image=media['url']))
+                media_url = media['url']
+              text.append(media_url)
         except KeyError:
           pass  # may happen when there is no (compatible) attachment
       except KeyError:
         continue  # that's okay
-      # finally add the event to the event list
       event_obj = Event(event_id, sender_id["gaia_id"], timestamp, text, links=links,
                         attachments=attachments, type=event_type)
       event_list.add(event_obj)
