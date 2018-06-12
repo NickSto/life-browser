@@ -459,6 +459,8 @@ def main(argv):
   validate_file(args.logfile)
 
   json_data = extract_data(args.logfile)
+  if json_data is None:
+    return 1
 
   all_convos = read_hangouts(json_data, convo_id=args.convo_id)
   if args.sort:
@@ -526,7 +528,7 @@ def extract_data(path):
           json_str = str(json_file.read(), 'utf8')
           return json.loads(json_str)
   else:
-    fail('File ending of "{}" not recognized.'.format(os.path.basename(path)))
+    logging.error('File ending of "{}" not recognized.'.format(os.path.basename(path)))
   return None
 
 
@@ -535,7 +537,7 @@ def fail(message):
   if __name__ == '__main__':
     sys.exit(1)
   else:
-    raise Exception('Unrecoverable error')
+    raise Exception('Unrecoverable error: {}'.format(message))
 
 
 if __name__ == '__main__':
