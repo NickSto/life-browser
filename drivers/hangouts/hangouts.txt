@@ -148,7 +148,7 @@ type:			a list of strings
 			- PLACE_V2: A location?
 			- THING_V2: Additional data for PLACE_V2?
 			- THING: Same as above?
-[embed type]:		observed values:
+[embed type str]:	the key [embed type str] will be one of the following observed strings:
 			- PlusPhoto.plus_photo
 			- embeds.PlusPhoto.plus_photo
 			- embeds.PlusAudioV2.plus_audio_v2
@@ -156,8 +156,8 @@ type:			a list of strings
 			- embeds.GeoCoordinatesV2.geo_coordinates_v2
 			- embeds.ThingV2.thing_v2
 
-[embed type]
-------------
+[embed type str]
+----------------
 - a dict
 thumbnail:		a dict
 owner_obfuscated_id
@@ -165,10 +165,24 @@ album_id
 photo_id
 url:			The url of the actual photo (in the case of PLUS_PHOTOs).
 			For PLUS_AUDIO_V2, this isn't a useful url.
+			For "VIDEO" media_types, this is just the thumbnail
 original_content_url
-media_type
+media_type:		a string. observed values:
+			- PHOTO
+			- ANIMATED_PHOTO
+			- VIDEO
 stream_id
 owner_obfuscated_id
 embed_url
 duration
 media_key
+
+thumbnail
+---------
+- a dict
+url:			For videos, this is a link to the video. But not a direct link.
+			It seems to lead to an html page which will load the video, but only if
+			you're logged in :(
+height px
+width px
+image_url
