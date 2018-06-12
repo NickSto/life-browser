@@ -291,6 +291,65 @@ class Contact(dict):
       data.append((key, norm_value))
     return tuple(data)
 
+  def __cmp__(self, other):
+    # I know it's been removed. This is to consolidate code used in the comparators.
+    for attr in 'name', 'phone', 'email':
+      result = ContactValue.none_cmp(getattr(self, attr), getattr(other, attr))
+      if result != 0:
+        return result
+    if self.is_me != other.is_me:
+      # True - False is 1, False - True is -1.
+      return other.is_me - self.is_me
+    if len(self) != len(other):
+      return len(self) - len(other)
+    all_keys = set(self.keys()) | set(other.keys())
+    for key in sorted(all_keys):
+      if key not in self:
+        return -1
+      if key not in other:
+        return 1
+      self_value = self[key]
+      other_value = other[key]
+      if self_value is None and other_value is not None:
+        return -1
+      elif self_value is not None and other_value is None:
+        return 1
+      self_plural = isinstance(self_value, ContactValues)
+      other_plural = isinstance(other_value, ContactValues)
+      if self_plural and other_plural:
+        result = none_cmp(self_value.key, other_value.key)
+        if result != 0:
+          return result
+        if self_value.indexable != other_value.indexable:
+          return other_value.indexable - self_value.indexable
+        if len(self_value) != len(other_value):
+          return len(self_value) - len(other_value)
+        for self_subval, other_subval in zip(self_value, other_value):
+          result = ContactValue.none_cmp(self_subval, other_subval)
+          if result != 0:
+            return result
+      elif not self_plural and not other_plural:
+        result = ContactValue.none_cmp(self_value, other_value)
+        if result != 0:
+          return result
+      elif self_plural:
+        return 1
+      elif other_plural:
+        return -1
+    return 0
+
+  def __lt__(self, other):
+    return self.__cmp__(other) < 0
+
+  def __le__(self, other):
+    return self.__cmp__(other) <= 0
+
+  def __gt__(self, other):
+    return self.__cmp__(other) > 0
+
+  def __ge__(self, other):
+    return self.__cmp__(other) >= 0
+
   def __eq__(self, other):
     if self.is_me != other.is_me:
       return False
@@ -426,6 +485,30 @@ class ContactValue(object):
       return self._normalize() == other._normalize()
     else:
       return self.value == other
+
+  @classmethod
+  def none_cmp(cls, value1, value2):
+    """Compare 2 variables which are either None or `ContactValue`s."""
+    if value1 is None and value2 is None:
+      return 0
+    elif value1 is None:
+      return 1
+    elif value2 is None:
+      return -1
+    for attr in 'key', 'value', 'indexable':
+      result = none_cmp(getattr(value1, attr), getattr(value2, attr))
+      if result != 0:
+        return result
+    all_keys = set(value1.attributes.keys()) | set(value2.attributes.keys())
+    for key in all_keys:
+      if key not in value1.attributes:
+        return 1
+      elif key not in value2.attributes:
+        return -1
+      result = none_cmp(value1.attributes[key], value2.attributes[key])
+      if result != 0:
+        return result
+    return 0
 
   def __bool__(self):
     return bool(self.value)
@@ -606,3 +689,19 @@ class ContactValues(ContactValue, list):
     return output
 
   #TODO: __repr__
+
+
+def none_cmp(value1, value2):
+  """Compare 2 variables which are either None or a comparable type."""
+  if value1 is None and value2 is None:
+    return 0
+  elif value1 is None:
+    return 1
+  elif value2 is None:
+    return -1
+  elif value1 > value2:
+    return 1
+  elif value1 < value2:
+    return -1
+  else:
+    return 0
