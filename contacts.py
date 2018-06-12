@@ -143,7 +143,7 @@ class Contact(dict):
 
   @property
   def phone(self):
-    self.get_by_index('phones', 0)
+    return self.get_by_index('phones', 0)
 
   # Setting .phone or .email won't overwrite anything, but instead insert the value at the front
   # of the list and push the rest down the list.
@@ -153,14 +153,14 @@ class Contact(dict):
 
   @property
   def email(self):
-    self.get_by_index('emails', 0)
+    return self.get_by_index('emails', 0)
 
   @email.setter
   def email(self, value):
     self['emails'].insert(0, value)
 
   def get_by_index(self, key, index):
-    """Get the first value of the ContactValues list at `key`."""
+    """Get the first value of the ContactValues list at `key`, or None if it doesn't exist."""
     contact_value = self.get(key)
     if isinstance(contact_value, ContactValues) and len(contact_value) > index:
       return contact_value[index].value
