@@ -1,3 +1,6 @@
 [submodule "drivers/voice/gvoiceParser"]
 	path = drivers/voice/gvoiceParser
 	url = https://github.com/NickSto/gvoiceParser.git
+[submodule "utillib"]
+	path = utillib
+	url = https://github.com/NickSto/utillib.git
