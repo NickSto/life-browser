@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import logging
+import re
 import sys
 from utillib import pinboard
 assert sys.version_info.major >= 3, 'Python 3 required'
@@ -65,12 +66,26 @@ def main(argv):
 def filter_urls(raw_urls, image_urls):
   for line in raw_urls:
     url = line.rstrip('\r\n')
-    if not (url.startswith('http://') or url.startswith('https://')):
-      url = 'http://'+url
+    url = fix_url(url)
+    if url is None:
+      continue
     if url in image_urls:
       logging.info('url already saved as image: {}'.format(url))
       continue
     yield url
+
+
+def fix_url(url):
+  # Does it look like an email address?
+  if url.startswith('mailto:'):
+    return None
+  if re.search(r'[^:/]+@[a-zA-Z0-9.-]+', url):
+    return None
+  # Does it omit the scheme?
+  if url.startswith('http://') or url.startswith('https://'):
+    return url
+  else:
+    return 'http://'+url
 
 
 def get_image_urls(metafile):
