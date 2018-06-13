@@ -56,18 +56,20 @@ class MessageEvent(Event):
     # `echo` should be True if this is the 2nd appearance of the message.
     self.echo = echo
 
-  #TODO: Overflow for recipients like "a, b, c, and 23 others".
   def __str__(self):
     time_str = datetime.fromtimestamp(self.start).strftime('%H:%M:%S')
     if self.stream == 'sms':
       stream_str = ' SMS:'
     else:
       stream_str = ' {}:'.format(self.stream.capitalize())
+    recipients_str = ', '.join(map(str, self.recipients[:4]))
+    if len(self.recipients) > 4:
+      recipients_str += ', and {} others'.format(len(self.recipients)-4)
     return '{start}{type} {sender} -> {recipients}: {message}'.format(
       start=time_str,
       type=stream_str,
       sender=self.sender,
-      recipients=', '.join(map(str, self.recipients)),
+      recipients=recipients_str,
       message=self.message
     )
 
