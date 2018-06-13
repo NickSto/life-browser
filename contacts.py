@@ -132,9 +132,11 @@ class Contact(dict):
     for key, value in kwargs.items():
       self[key] = value
 
+  # Quick accessors. These 3 attributes always appear to store a simple string.
+
   @property
   def name(self):
-    return self['name']
+    return self['name'].value
 
   @name.setter
   def name(self, value):
@@ -262,7 +264,10 @@ class Contact(dict):
     # Once you've found your hook(s), scan for matches.
     if hook:
       key = hook_key
-      value = hook.value
+      if key == 'name':
+        value = hook
+      else:
+        value = hook.value
       for contact in contacts:
         if key in contact and contact[key].value == value:
           # Verify the candidate match.
