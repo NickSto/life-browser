@@ -15,17 +15,20 @@ class Event(object):
       self.raw = raw
 
   def _generic_eq(self, other):
-    if self.start != other.start:
+    if not isinstance(other, Event):
       return False
-    if type(self) != type(other):
+    elif self.start != other.start:
       return False
-    if self.stream != other.stream:
+    elif type(self) != type(other):
       return False
-    if self.format != other.format:
+    elif self.stream != other.stream:
       return False
-    if self.end != other.end:
+    elif self.format != other.format:
       return False
-    return True
+    elif self.end != other.end:
+      return False
+    else:
+      return True
 
   def __eq__(self, other):
     if not self._generic_eq(other):
@@ -44,11 +47,14 @@ class Event(object):
 
 class MessageEvent(Event):
   """Messages like SMS, chats, etc."""
-  def __init__(self, stream, format, start, sender, recipients, message, raw=None):
+  def __init__(self, stream, format, start, sender, recipients, message, echo=False, raw=None):
     super().__init__(stream, format, start, raw=raw)
     self.sender = sender
     self.recipients = recipients
     self.message = message
+    # If this is a message from myself to myself, it will show up twice.
+    # `echo` should be True if this is the 2nd appearance of the message.
+    self.echo = echo
 
   #TODO: Overflow for recipients like "a, b, c, and 23 others".
   def __str__(self):
@@ -69,6 +75,8 @@ class MessageEvent(Event):
     if not self._generic_eq(other):
       return False
     if self.message != other.message:
+      return False
+    if self.echo != other.echo:
       return False
     #TODO: Is this test appropriate for Contacts? Verify that if the same event is parsed from two
     #      different files, it'll end up with the same Contacts, after deduplication via ContactBook.

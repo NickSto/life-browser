@@ -209,6 +209,7 @@ def verify_path(path, type='file'):
 
 def dedup_events(old_events):
   """Remove duplicate events from a sorted list."""
+  duplicates = 0
   new_events = []
   last_event = None
   for event in old_events:
@@ -216,9 +217,13 @@ def dedup_events(old_events):
       duplicate = False
     else:
       duplicate = event == last_event
-    if not duplicate:
+    if duplicate:
+      duplicates += 1
+    else:
       new_events.append(event)
       last_event = event
+  if duplicates:
+    logging.warning('Removed {} duplicate events.'.format(duplicates))
   return new_events
 
 

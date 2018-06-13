@@ -56,6 +56,8 @@ def get_events(path, contacts=None, **kwargs):
   if not mynumbers:
     logging.warning('No numbers of yours provided. May have problems identifying you in '
                     'conversations.')
+  instance = 0
+  last_event = None
   for raw_record in archive:
     tree = html5lib.parse(raw_record.contents)
     convo = gvParserLib.Parser.process_tree(tree, raw_record.filename, mynumbers)
@@ -65,7 +67,7 @@ def get_events(path, contacts=None, **kwargs):
       for message in convo:
         kwargs = get_voice_event_args(message, contacts)
         kwargs['raw']['conversation'] = convo
-        yield VoiceMessageEvent(
+        event = VoiceMessageEvent(
           stream='sms',
           sender=convert_contact(message.contact, contacts),
           recipients=[convert_contact(c, contacts) for c in message.recipients],
@@ -81,7 +83,7 @@ def get_events(path, contacts=None, **kwargs):
       else:
         kwargs['sender'] = convert_contact(convo.contact, contacts)
         kwargs['recipients'] = [contacts.me]
-      yield VoiceCallEvent(
+      event = VoiceCallEvent(
         stream='call',
         subtype=subtype,
         **kwargs
@@ -93,13 +95,20 @@ def get_events(path, contacts=None, **kwargs):
       #TODO: Use the `filename` attribute to find the mp3 of the audio
       #      (Note: it only gives the filename, not the full path).
       kwargs = get_voice_event_args(convo, contacts)
-      yield VoiceCallEvent(
+      event = VoiceCallEvent(
         stream='call',
         subtype=subtype,
         sender=convert_contact(convo.contact, contacts),
         recipients=[contacts.me],
         **kwargs
       )
+    # Is this the 2nd appearance of a text from myself to myself?
+    if event == last_event:
+      if event.sender.is_me and any([recipient.is_me for recipient in event.recipients]):
+        event.echo = True
+    # Return the event.
+    yield event
+    last_event = event
 
 
 def get_voice_event_args(voice_record, contacts):
