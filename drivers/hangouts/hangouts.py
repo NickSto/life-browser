@@ -50,9 +50,9 @@ class HangoutsEvent(MessageEvent):
     self.subtype = subtype
 
   def __eq__(self, other):
+    return super().__eq__(other)
     if self.subtype != other.subtype:
       return False
-    return super().__eq__(other)
 
 
 def get_events(path, contacts=None, **kwargs):

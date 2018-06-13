@@ -299,7 +299,7 @@ class Contact(dict):
   def __cmp__(self, other):
     # I know it's been removed. This is to consolidate code used in the comparators.
     for attr in 'name', 'phone', 'email':
-      result = ContactValue.none_cmp(getattr(self, attr), getattr(other, attr))
+      result = none_cmp(getattr(self, attr), getattr(other, attr))
       if result != 0:
         return result
     if self.is_me != other.is_me:

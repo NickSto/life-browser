@@ -17,6 +17,8 @@ class Event(object):
   def _generic_eq(self, other):
     if self.start != other.start:
       return False
+    if type(self) != type(other):
+      return False
     if self.stream != other.stream:
       return False
     if self.format != other.format:
