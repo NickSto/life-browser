@@ -28,6 +28,9 @@ def make_argparser():
   parser.add_argument('-A', '--user-agent',
     default='Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0',
     help='User agent to give when making requests to the urls. Default: "%(default)s"')
+  parser.add_argument('-p', '--pause', type=float, default=1,
+    help='A time to wait in-between requests to the Pinboard API. The documentation recommends 3 '
+         'seconds: https://pinboard.in/api Default: %(default)s')
   parser.add_argument('-n', '--simulate', action='store_true',
     help='Only simulate the process, printing the tabs which will be archived but without actually '
          'doing it.')
@@ -60,7 +63,7 @@ def main(argv):
 
   pinboard.save_bookmarks(filtered_urls, args.auth_token, tags=args.tags.split(','),
                           simulate=args.simulate, skip_dead_links=args.skip_dead_links,
-                          user_agent=args.user_agent)
+                          user_agent=args.user_agent, pause=args.pause)
 
 
 def filter_urls(raw_urls, image_urls):
