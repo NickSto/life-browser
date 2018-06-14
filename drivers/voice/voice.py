@@ -227,7 +227,7 @@ class Archive(object):
   def __iter__(self):
     if self.type == 'dir':
       for filename in self.files:
-        if not filename.endwith('.html'):
+        if not filename.endswith('.html'):
           continue
         raw_record = RawRecord(filename=filename)
         path = os.path.join(self.root, 'Calls', filename)
