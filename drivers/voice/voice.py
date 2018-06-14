@@ -56,7 +56,6 @@ def get_events(path, contacts=None, **kwargs):
   if not mynumbers:
     logging.warning('No numbers of yours provided. May have problems identifying you in '
                     'conversations.')
-  instance = 0
   last_event = None
   for raw_record in archive:
     tree = html5lib.parse(raw_record.contents)
@@ -74,41 +73,42 @@ def get_events(path, contacts=None, **kwargs):
           message=message.text,
           **kwargs
         )
-    elif subtype in ('placed', 'received', 'missed'):
-      # It's a CallRecord of a Placed, Received, or Missed call.
-      kwargs = get_voice_event_args(convo, contacts)
-      if convo.calltype == 'placed':
-        kwargs['sender'] = contacts.me
-        kwargs['recipients'] = [convert_contact(convo.contact, contacts)]
-      else:
-        kwargs['sender'] = convert_contact(convo.contact, contacts)
-        kwargs['recipients'] = [contacts.me]
-      event = VoiceCallEvent(
-        stream='call',
-        subtype=subtype,
-        **kwargs
-      )
+        event.echo = is_echo(event, last_event)
+        yield event
+        last_event = event
     else:
-      # It's an AudioRecord of a Voicemail or Recorded call.
-      # Well, actually sometimes Voicemails are CallRecords, somehow. So they won't have a filename.
-      # See the example of Google Voice - Voicemail - 2009-07-18T23_26_16Z.html
-      #TODO: Use the `filename` attribute to find the mp3 of the audio
-      #      (Note: it only gives the filename, not the full path).
-      kwargs = get_voice_event_args(convo, contacts)
-      event = VoiceCallEvent(
-        stream='call',
-        subtype=subtype,
-        sender=convert_contact(convo.contact, contacts),
-        recipients=[contacts.me],
-        **kwargs
-      )
-    # Is this the 2nd appearance of a text from myself to myself?
-    if event == last_event:
-      if event.sender.is_me and any([recipient.is_me for recipient in event.recipients]):
-        event.echo = True
-    # Return the event.
-    yield event
-    last_event = event
+      # It's a call.
+      if subtype in ('placed', 'received', 'missed'):
+        # It's a CallRecord of a Placed, Received, or Missed call.
+        kwargs = get_voice_event_args(convo, contacts)
+        if convo.calltype == 'placed':
+          kwargs['sender'] = contacts.me
+          kwargs['recipients'] = [convert_contact(convo.contact, contacts)]
+        else:
+          kwargs['sender'] = convert_contact(convo.contact, contacts)
+          kwargs['recipients'] = [contacts.me]
+        event = VoiceCallEvent(
+          stream='call',
+          subtype=subtype,
+          **kwargs
+        )
+      else:
+        # It's an AudioRecord of a Voicemail or Recorded call.
+        # Well, actually sometimes Voicemails are CallRecords, somehow. So they won't have a filename.
+        # See the example of Google Voice - Voicemail - 2009-07-18T23_26_16Z.html
+        #TODO: Use the `filename` attribute to find the mp3 of the audio
+        #      (Note: it only gives the filename, not the full path).
+        kwargs = get_voice_event_args(convo, contacts)
+        event = VoiceCallEvent(
+          stream='call',
+          subtype=subtype,
+          sender=convert_contact(convo.contact, contacts),
+          recipients=[contacts.me],
+          **kwargs
+        )
+      event.echo = is_echo(event, last_event)
+      yield event
+      last_event = event
 
 
 def get_voice_event_args(voice_record, contacts):
@@ -125,6 +125,14 @@ def get_voice_event_args(voice_record, contacts):
     else:
       kwargs['end'] = int(time.mktime((voice_record.date+voice_record.duration).timetuple()))
   return kwargs
+
+
+def is_echo(event, last_event):
+  # Is this the 2nd appearance of a text or call from myself to myself?
+  if event == last_event:
+    if event.sender.is_me and any([recipient.is_me for recipient in event.recipients]):
+      return True
+  return False
 
 
 def convert_contact(voice_contact, contacts=None):
