@@ -154,12 +154,20 @@ def make_argparser():
     help='Print the value of this key from the metadata.')
   parser.add_argument('-l', '--key-len',
     help='Print the length of this value for this key from the metadata.')
+  parser.add_argument('-L', '--log', type=argparse.FileType('w'), default=sys.stderr,
+    help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
+  volume = parser.add_mutually_exclusive_group()
+  volume.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
+    default=logging.WARNING)
+  volume.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
+  volume.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
   return parser
 
 
 def main(argv):
   parser = make_argparser()
   args = parser.parse_args(argv[1:])
+  logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   for i, kml_path in enumerate(args.kml):
     if len(args.kml) > 1:
       print(os.path.basename(kml_path))
@@ -184,12 +192,16 @@ def main(argv):
         else:
           print(len(value))
     else:
+      duration = datetime.timedelta(seconds=(meta['end']-meta['start']))
       print("""subformat:\t{subformat}
 title:\t{title}
+duration:\t{}
+markers:\t{}
 description:
-{description}""".format(**meta))
+{description}""".format(duration, len(markers), **meta))
     if len(args.kml) > 1 and i < len(args.kml)-1:
       print()
+
 
 def fail(message):
   logging.critical(message)
