@@ -37,15 +37,11 @@ def parse(kml):
     # <atom:author>
     elif (element.tag == '{http://www.w3.org/2005/Atom}author' and
         element[0].tag == '{http://www.w3.org/2005/Atom}name'):
-      name = element[0].text
-      if name == 'Created by Google My Tracks on Android':
-        meta['subformat'] = 'mytracks'
-      elif name == 'Recorded in Geo Tracker for Android from Ilya Bogdanovich':
-        meta['subformat'] = 'geotracker'
+      meta['subformat'] = parse_subformat(element[0].text)
     # <Folder>
-    elif (element.tag == '{http://www.opengis.net/kml/2.2}Folder':
+    elif element.tag == '{http://www.opengis.net/kml/2.2}Folder':
       # Get markers for My Tracks files.
-      if meta['subformat'] == 'mytracks')
+      if meta['subformat'] == 'mytracks':
         for subelement in element:
           if subelement.tag == '{http://www.opengis.net/kml/2.2}name':
             assert subelement.text.endswith(' Markers'), subelement.text
@@ -73,36 +69,59 @@ def parse(kml):
                 meta['end'] = dateutil.parser.parse(sub2element.text).timestamp()
       # Get start/end timestamps for My Tracks files.
       elif meta['subformat'] == 'mytracks':
-        placemark_type = None
-        timestamp = None
-        for subelement in element:
-          if (subelement.tag == '{http://www.opengis.net/kml/2.2}TimeStamp' and len(subelement) > 0
-              and subelement[0].tag == '{http://www.opengis.net/kml/2.2}when'):
-            timestamp = dateutil.parser.parse(subelement[0].text).timestamp()
-          elif subelement.tag == '{http://www.opengis.net/kml/2.2}styleUrl':
-            placemark_type = subelement.text
-        if placemark_type == '#start' and timestamp:
-          meta['start'] = timestamp
-        elif placemark_type == '#end' and timestamp:
-          meta['end'] = timestamp
+        placemark_type, timestamp = parse_mytracks_timestamp(element)
+        if timestamp and placemark_type in ('start', 'end'):
+          meta[placemark_type] = timestamp
       # Get markers for Geo Tracker files.
       elif meta['subformat'] == 'geotracker':
         marker = parse_marker(element)
         if marker is not None:
           markers.append(marker)
-    # Sometimes there's no start/end timestamps, or any timestamps at all in the file.
-    # I've only encountered this with My Tracks. In this case, there's still usually a date in the
-    # title. If so, use that, and say the timespan is from the start of that day to the end of it.
+    # If there's no start/end timestamps, infer them from the title.
     if meta['start'] is None and meta['title']:
-      fields = meta['title'].split()
-      try:
-        dt = dateutil.parser.parse(fields[0])
-      except ValueError:
-        dt = None
-      if dt:
-        meta['start'] = dt.timestamp()
-        meta['end'] = (dt + datetime.timedelta(days=1)).timestamp()
+      start, end = parse_timestamps_from_title(meta['title'])
+      if start and end:
+        meta['start'] = start
+        meta['end'] = end
   return meta, markers
+
+
+def parse_subformat(name):
+  if name == 'Created by Google My Tracks on Android':
+    return 'mytracks'
+  elif name == 'Recorded in Geo Tracker for Android from Ilya Bogdanovich':
+    return 'geotracker'
+  else:
+    return None
+
+
+def parse_mytracks_timestamp(placemark_element):
+  placemark_type = None
+  timestamp = None
+  for subelement in placemark_element:
+    if (subelement.tag == '{http://www.opengis.net/kml/2.2}TimeStamp' and len(subelement) > 0
+        and subelement[0].tag == '{http://www.opengis.net/kml/2.2}when'):
+      timestamp = dateutil.parser.parse(subelement[0].text).timestamp()
+    elif subelement.tag == '{http://www.opengis.net/kml/2.2}styleUrl':
+      placemark_type = subelement.text
+  return timestamp, placemark_type[1:]
+
+
+def parse_timestamps_from_title(title):
+  # Sometimes there's no start/end timestamps, or any timestamps at all in the file.
+  # I've only encountered this with My Tracks. In this case, there's still usually a date in the
+  # title. If so, use that, and say the timespan is from the start of that day to the end of it.
+  fields = title.split()
+  try:
+    dt = dateutil.parser.parse(fields[0])
+  except ValueError:
+    dt = None
+  if dt:
+    start = dt.timestamp()
+    end = (dt + datetime.timedelta(days=1)).timestamp()
+    return start, end
+  else:
+    return None, None
 
 
 def parse_marker(marker_element):
