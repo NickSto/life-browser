@@ -184,13 +184,17 @@ def main(argv):
           print(len(value))
     else:
       duration = datetime.timedelta(seconds=round(meta['end']-meta['start']))
+      if meta['distance'] is None:
+        distance = None
+      else:
+        distance = '{:0.2f}mi'.format(meta['distance']*0.6213)
       print("""title:\t{title}
 dialect:\t{dialect}
 duration:\t{}
-distance:\t{}mi
+distance:\t{}
 markers:\t{}
 description:
-{description}""".format(duration, round(meta['distance']*0.6213, 2), len(markers), **meta))
+{description}""".format(duration, distance, len(markers), **meta))
     if len(args.kml) > 1 and i < len(args.kml)-1:
       print()
 

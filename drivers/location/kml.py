@@ -22,7 +22,7 @@ def read_kmz(kmz_path):
 
 def parse_track(track_element):
   distance = 0
-  last_lat = last_lon = None
+  lat = lon = last_lat = last_lon = None
   for element in track_element:
     # <gx:Track>
     if element.tag == '{http://www.google.com/kml/ext/2.2}Track':
@@ -51,6 +51,8 @@ def parse_coord(coord_str, type):
   #TODO: Might have to check the <altitudeMode> before knowing if this is relative or absolute.
   if len(fields) == 3:
     altitude = float(fields[2])
+  else:
+    altitude = None
   return latitude, longitude, altitude
 
 
