@@ -2,12 +2,14 @@
 import argparse
 import datetime
 import logging
+import math
 import os
 import sys
 import zipfile
 import dateutil.parser
 import defusedxml.ElementTree
 
+EARTH_RADIUS = 6371  # Radius of Earth in km.
 
 def read_kml(kml_path):
   """Give the path to a .kml file or an open filehandle and this will return an ElementTree.
@@ -25,7 +27,8 @@ def read_kmz(kmz_path):
 
 
 def parse(kml):
-  meta = {'subformat':None, 'title':None, 'description':None, 'start':None, 'end':None}
+  meta = {'subformat':None, 'title':None, 'description':None, 'start':None, 'end':None,
+          'distance':None}
   markers = []
   # <kml> = kml
   if len(kml) == 0:
@@ -60,6 +63,7 @@ def parse(kml):
           # <description>
           elif subelement.tag == '{http://www.opengis.net/kml/2.2}description':
             meta['description'] = subelement.text
+          # <TimeSpan>: Get start/end timestamps for Geo Tracker files.
           elif (subelement.tag == '{http://www.opengis.net/kml/2.2}TimeSpan' and
               meta['subformat'] == 'geotracker'):
             for sub2element in subelement:
@@ -67,6 +71,9 @@ def parse(kml):
                 meta['start'] = dateutil.parser.parse(sub2element.text).timestamp()
               elif sub2element.tag == '{http://www.opengis.net/kml/2.2}end':
                 meta['end'] = dateutil.parser.parse(sub2element.text).timestamp()
+          # <gx:MultiTrack>
+          elif subelement.tag == '{http://www.google.com/kml/ext/2.2}MultiTrack':
+            meta['distance'] = parse_track(subelement)
       # Get start/end timestamps for My Tracks files.
       elif meta['subformat'] == 'mytracks':
         timestamp, placemark_type = parse_mytracks_timestamp(element)
@@ -134,10 +141,7 @@ def parse_marker(marker_element):
       marker['description'] = element.text
     elif (element.tag == '{http://www.opengis.net/kml/2.2}Point' and len(element) > 0 and
         element[0].tag == '{http://www.opengis.net/kml/2.2}coordinates'):
-      fields = element[0].text.split(',')
-      assert 2 <= len(fields) <= 3, element[0].text
-      marker['long'] = float(fields[0])
-      marker['lat'] = float(fields[1])
+      marker['lat'], marker['long'], dummy = parse_coord(element[0].text, 'kml')
     elif (element.tag == '{http://www.opengis.net/kml/2.2}TimeStamp' and len(element) > 0 and
         element[0].tag == '{http://www.opengis.net/kml/2.2}when'):
       marker['timestamp'] = dateutil.parser.parse(element[0].text).timestamp()
@@ -145,6 +149,54 @@ def parse_marker(marker_element):
     return None
   else:
     return marker
+
+
+def parse_track(track_element):
+  distance = 0
+  last_lat = last_lon = None
+  for element in track_element:
+    # <gx:Track>
+    if element.tag == '{http://www.google.com/kml/ext/2.2}Track':
+      for subelement in element:
+        # <gx:coord>
+        if subelement.tag == '{http://www.google.com/kml/ext/2.2}coord':
+          lat, lon, alt = parse_coord(subelement.text, 'gx')
+          if last_lat is not None and last_lon is not None:
+            distance += get_lat_long_distance(lat, lon, last_lat, last_lon)
+          last_lat = lat
+          last_lon = lon
+  if lat is None or last_lat is None or lon is None or last_lon is None:
+    return None
+  else:
+    return distance
+
+
+def parse_coord(coord_str, type):
+  if type == 'kml':
+    fields = coord_str.split(',')
+  elif type == 'gx':
+    fields = coord_str.split()
+  assert 2 <= len(fields) <= 3, coord_str
+  longitude = float(fields[0])
+  latitude = float(fields[1])
+  #TODO: Might have to check the <altitudeMode> before knowing if this is relative or absolute.
+  if len(fields) == 3:
+    altitude = float(fields[2])
+  return latitude, longitude, altitude
+
+
+def get_lat_long_distance(lat1, lon1, lat2, lon2):
+  """Use haversine formula to calculate the distance between two points on Earth.
+  Takes two latitude/longitude pairs and returns the distance in kilometers."""
+  # Taken from https://stackoverflow.com/questions/4913349/haversine-formula-in-python-bearing-and-distance-between-two-gps-points/45395941#45395941
+  #TODO: Use geopy: https://geopy.readthedocs.io/en/stable/#module-geopy.distance
+  lat_delta = math.radians(lat2 - lat1)
+  lon_delta = math.radians(lon2 - lon1)
+  lat1 = math.radians(lat1)
+  lat2 = math.radians(lat2)
+  a = math.sin(lat_delta/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(lon_delta/2)**2
+  c = 2*math.asin(math.sqrt(a))
+  return EARTH_RADIUS * c
 
 
 def make_argparser():
@@ -193,13 +245,14 @@ def main(argv):
         else:
           print(len(value))
     else:
-      duration = datetime.timedelta(seconds=(meta['end']-meta['start']))
-      print("""subformat:\t{subformat}
-title:\t{title}
+      duration = datetime.timedelta(seconds=round(meta['end']-meta['start']))
+      print("""title:\t{title}
+subformat:\t{subformat}
 duration:\t{}
+distance:\t{}mi
 markers:\t{}
 description:
-{description}""".format(duration, len(markers), **meta))
+{description}""".format(duration, round(meta['distance']*0.6213, 2), len(markers), **meta))
     if len(args.kml) > 1 and i < len(args.kml)-1:
       print()
 
