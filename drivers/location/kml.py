@@ -24,8 +24,9 @@ def read_kmz(kmz_path):
   return defusedxml.ElementTree.fromstring(kml_string)
 
 
-def get_metadata(kml):
+def parse(kml):
   meta = {'subformat':None, 'title':None, 'description':None, 'start':None, 'end':None}
+  markers = []
   # <kml> = kml
   if len(kml) == 0:
     return None
@@ -41,6 +42,17 @@ def get_metadata(kml):
         meta['subformat'] = 'mytracks'
       elif name == 'Recorded in Geo Tracker for Android from Ilya Bogdanovich':
         meta['subformat'] = 'geotracker'
+    # <Folder>
+    elif (element.tag == '{http://www.opengis.net/kml/2.2}Folder':
+      # Get markers for My Tracks files.
+      if meta['subformat'] == 'mytracks')
+        for subelement in element:
+          if subelement.tag == '{http://www.opengis.net/kml/2.2}name':
+            assert subelement.text.endswith(' Markers'), subelement.text
+          elif subelement.tag == '{http://www.opengis.net/kml/2.2}Placemark':
+            marker = parse_marker(subelement)
+            if marker is not None:
+              markers.append(marker)
     # <Placemark>
     elif element.tag == '{http://www.opengis.net/kml/2.2}Placemark':
       # <Placemark id="tour">
@@ -73,6 +85,11 @@ def get_metadata(kml):
           meta['start'] = timestamp
         elif placemark_type == '#end' and timestamp:
           meta['end'] = timestamp
+      # Get markers for Geo Tracker files.
+      elif meta['subformat'] == 'geotracker':
+        marker = parse_marker(element)
+        if marker is not None:
+          markers.append(marker)
     # Sometimes there's no start/end timestamps, or any timestamps at all in the file.
     # I've only encountered this with My Tracks. In this case, there's still usually a date in the
     # title. If so, use that, and say the timespan is from the start of that day to the end of it.
@@ -85,7 +102,29 @@ def get_metadata(kml):
       if dt:
         meta['start'] = dt.timestamp()
         meta['end'] = (dt + datetime.timedelta(days=1)).timestamp()
-  return meta
+  return meta, markers
+
+
+def parse_marker(marker_element):
+  marker = {'name':None, 'description':None, 'timestamp':None, 'lat':None, 'long':None}
+  for element in marker_element:
+    if element.tag == '{http://www.opengis.net/kml/2.2}name':
+      marker['name'] = element.text
+    elif element.tag == '{http://www.opengis.net/kml/2.2}description':
+      marker['description'] = element.text
+    elif (element.tag == '{http://www.opengis.net/kml/2.2}Point' and len(element) > 0 and
+        element[0].tag == '{http://www.opengis.net/kml/2.2}coordinates'):
+      fields = element[0].text.split(',')
+      assert 2 <= len(fields) <= 3, element[0].text
+      marker['long'] = float(fields[0])
+      marker['lat'] = float(fields[1])
+    elif (element.tag == '{http://www.opengis.net/kml/2.2}TimeStamp' and len(element) > 0 and
+        element[0].tag == '{http://www.opengis.net/kml/2.2}when'):
+      marker['timestamp'] = dateutil.parser.parse(element[0].text).timestamp()
+  if any([v is None for v in marker.values()]):
+    return None
+  else:
+    return marker
 
 
 def make_argparser():
@@ -109,15 +148,22 @@ def main(argv):
       kml = read_kmz(kml_path)
     else:
       kml = read_kml(kml_path)
-    meta = get_metadata(kml)
+    meta, markers = parse(kml)
     if args.key:
-      print(meta[args.key])
-    elif args.key_len:
-      value = meta[args.key_len]
-      if value is None:
-        print(0)
+      if args.key == 'markers':
+        for marker in markers:
+          print(marker['name'])
       else:
-        print(len(value))
+        print(meta[args.key])
+    elif args.key_len:
+      if args.key_len == 'markers':
+        print(len(markers))
+      else:
+        value = meta[args.key_len]
+        if value is None:
+          print(0)
+        else:
+          print(len(value))
     else:
       print("""subformat:\t{subformat}
 title:\t{title}
