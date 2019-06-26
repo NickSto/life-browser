@@ -1,50 +1,33 @@
 #!/usr/bin/env python3
+"""Parser for the KML format output by Google's My Tracks, plus derivative formats."""
 import argparse
 import datetime
 import logging
-import math
 import os
 import sys
-import zipfile
 import dateutil.parser
-import defusedxml.ElementTree
-
-EARTH_RADIUS = 6371  # Radius of Earth in km.
-
-def read_kml(kml_path):
-  """Give the path to a .kml file or an open filehandle and this will return an ElementTree.
-  The ElementTree will be from defusedxml."""
-  tree = defusedxml.ElementTree.parse(kml_path)
-  return tree.getroot()
+import kml
 
 
-def read_kmz(kmz_path):
-  """Give the path to a .kmz file and this will return an ElementTree of the doc.kml.
-  The ElementTree will be from defusedxml."""
-  kmz_file = zipfile.ZipFile(kmz_path, 'r')
-  kml_string = kmz_file.open('doc.kml', 'r').read()
-  return defusedxml.ElementTree.fromstring(kml_string)
-
-
-def parse(kml):
-  meta = {'subformat':None, 'title':None, 'description':None, 'start':None, 'end':None,
+def parse(kml_tree):
+  meta = {'dialect':None, 'title':None, 'description':None, 'start':None, 'end':None,
           'distance':None}
   markers = []
-  # <kml> = kml
-  if len(kml) == 0:
+  # <kml>
+  if len(kml_tree) == 0:
     return None
-  # <Document> = kml[0]
-  for element in kml[0]:
+  # <Document>
+  for element in kml_tree[0]:
     if len(element) == 0:
       continue
     # <atom:author>
     elif (element.tag == '{http://www.w3.org/2005/Atom}author' and
         element[0].tag == '{http://www.w3.org/2005/Atom}name'):
-      meta['subformat'] = parse_subformat(element[0].text)
+      meta['dialect'] = parse_dialect(element[0].text)
     # <Folder>
     elif element.tag == '{http://www.opengis.net/kml/2.2}Folder':
       # Get markers for My Tracks files.
-      if meta['subformat'] == 'mytracks':
+      if meta['dialect'] == 'mytracks':
         for subelement in element:
           if subelement.tag == '{http://www.opengis.net/kml/2.2}name':
             assert subelement.text.endswith(' Markers'), subelement.text
@@ -65,7 +48,7 @@ def parse(kml):
             meta['description'] = subelement.text
           # <TimeSpan>: Get start/end timestamps for Geo Tracker files.
           elif (subelement.tag == '{http://www.opengis.net/kml/2.2}TimeSpan' and
-              meta['subformat'] == 'geotracker'):
+              meta['dialect'] == 'geotracker'):
             for sub2element in subelement:
               if sub2element.tag == '{http://www.opengis.net/kml/2.2}begin':
                 meta['start'] = dateutil.parser.parse(sub2element.text).timestamp()
@@ -73,14 +56,14 @@ def parse(kml):
                 meta['end'] = dateutil.parser.parse(sub2element.text).timestamp()
           # <gx:MultiTrack>
           elif subelement.tag == '{http://www.google.com/kml/ext/2.2}MultiTrack':
-            meta['distance'] = parse_track(subelement)
+            meta['distance'] = kml.parse_track(subelement)
       # Get start/end timestamps for My Tracks files.
-      elif meta['subformat'] == 'mytracks':
+      elif meta['dialect'] == 'mytracks':
         timestamp, placemark_type = parse_mytracks_timestamp(element)
         if timestamp and placemark_type in ('start', 'end'):
           meta[placemark_type] = timestamp
       # Get markers for Geo Tracker files.
-      elif meta['subformat'] == 'geotracker':
+      elif meta['dialect'] == 'geotracker':
         marker = parse_marker(element)
         if marker is not None:
           markers.append(marker)
@@ -94,7 +77,7 @@ def parse(kml):
   return meta, markers
 
 
-def parse_subformat(name):
+def parse_dialect(name):
   if name == 'Created by Google My Tracks on Android':
     return 'mytracks'
   elif name == 'Recorded in Geo Tracker for Android from Ilya Bogdanovich':
@@ -141,7 +124,7 @@ def parse_marker(marker_element):
       marker['description'] = element.text
     elif (element.tag == '{http://www.opengis.net/kml/2.2}Point' and len(element) > 0 and
         element[0].tag == '{http://www.opengis.net/kml/2.2}coordinates'):
-      marker['lat'], marker['long'], dummy = parse_coord(element[0].text, 'kml')
+      marker['lat'], marker['long'], dummy = kml.parse_coord(element[0].text, 'kml')
     elif (element.tag == '{http://www.opengis.net/kml/2.2}TimeStamp' and len(element) > 0 and
         element[0].tag == '{http://www.opengis.net/kml/2.2}when'):
       marker['timestamp'] = dateutil.parser.parse(element[0].text).timestamp()
@@ -151,52 +134,7 @@ def parse_marker(marker_element):
     return marker
 
 
-def parse_track(track_element):
-  distance = 0
-  last_lat = last_lon = None
-  for element in track_element:
-    # <gx:Track>
-    if element.tag == '{http://www.google.com/kml/ext/2.2}Track':
-      for subelement in element:
-        # <gx:coord>
-        if subelement.tag == '{http://www.google.com/kml/ext/2.2}coord':
-          lat, lon, alt = parse_coord(subelement.text, 'gx')
-          if last_lat is not None and last_lon is not None:
-            distance += get_lat_long_distance(lat, lon, last_lat, last_lon)
-          last_lat = lat
-          last_lon = lon
-  if lat is None or last_lat is None or lon is None or last_lon is None:
-    return None
-  else:
-    return distance
-
-
-def parse_coord(coord_str, type):
-  if type == 'kml':
-    fields = coord_str.split(',')
-  elif type == 'gx':
-    fields = coord_str.split()
-  assert 2 <= len(fields) <= 3, coord_str
-  longitude = float(fields[0])
-  latitude = float(fields[1])
-  #TODO: Might have to check the <altitudeMode> before knowing if this is relative or absolute.
-  if len(fields) == 3:
-    altitude = float(fields[2])
-  return latitude, longitude, altitude
-
-
-def get_lat_long_distance(lat1, lon1, lat2, lon2):
-  """Use haversine formula to calculate the distance between two points on Earth.
-  Takes two latitude/longitude pairs and returns the distance in kilometers."""
-  # Taken from https://stackoverflow.com/questions/4913349/haversine-formula-in-python-bearing-and-distance-between-two-gps-points/45395941#45395941
-  #TODO: Use geopy: https://geopy.readthedocs.io/en/stable/#module-geopy.distance
-  lat_delta = math.radians(lat2 - lat1)
-  lon_delta = math.radians(lon2 - lon1)
-  lat1 = math.radians(lat1)
-  lat2 = math.radians(lat2)
-  a = math.sin(lat_delta/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(lon_delta/2)**2
-  c = 2*math.asin(math.sqrt(a))
-  return EARTH_RADIUS * c
+########## Command line interface ##########
 
 
 def make_argparser():
@@ -225,10 +163,10 @@ def main(argv):
     if len(args.kml) > 1:
       print(os.path.basename(kml_path))
     if kml_path.endswith('.kmz') or kml_path.endswith('.zip'):
-      kml = read_kmz(kml_path)
+      kml_tree = kml.read_kmz(kml_path)
     else:
-      kml = read_kml(kml_path)
-    meta, markers = parse(kml)
+      kml_tree = kml.read_kml(kml_path)
+    meta, markers = parse(kml_tree)
     if args.key:
       if args.key == 'markers':
         for marker in markers:
@@ -247,7 +185,7 @@ def main(argv):
     else:
       duration = datetime.timedelta(seconds=round(meta['end']-meta['start']))
       print("""title:\t{title}
-subformat:\t{subformat}
+dialect:\t{dialect}
 duration:\t{}
 distance:\t{}mi
 markers:\t{}
