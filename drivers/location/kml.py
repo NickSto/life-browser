@@ -69,7 +69,7 @@ def parse(kml):
                 meta['end'] = dateutil.parser.parse(sub2element.text).timestamp()
       # Get start/end timestamps for My Tracks files.
       elif meta['subformat'] == 'mytracks':
-        placemark_type, timestamp = parse_mytracks_timestamp(element)
+        timestamp, placemark_type = parse_mytracks_timestamp(element)
         if timestamp and placemark_type in ('start', 'end'):
           meta[placemark_type] = timestamp
       # Get markers for Geo Tracker files.
@@ -79,6 +79,7 @@ def parse(kml):
           markers.append(marker)
     # If there's no start/end timestamps, infer them from the title.
     if meta['start'] is None and meta['title']:
+      logging.warning('Warning: Could not find start/end times. Inferring from title..')
       start, end = parse_timestamps_from_title(meta['title'])
       if start and end:
         meta['start'] = start
@@ -103,8 +104,8 @@ def parse_mytracks_timestamp(placemark_element):
         and subelement[0].tag == '{http://www.opengis.net/kml/2.2}when'):
       timestamp = dateutil.parser.parse(subelement[0].text).timestamp()
     elif subelement.tag == '{http://www.opengis.net/kml/2.2}styleUrl':
-      placemark_type = subelement.text
-  return timestamp, placemark_type[1:]
+      placemark_type = subelement.text[1:]
+  return timestamp, placemark_type
 
 
 def parse_timestamps_from_title(title):
