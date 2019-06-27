@@ -13,20 +13,18 @@ http://creativecommons.org/licenses/by-nc-sa/3.0/us/
 import os
 import sys
 import time
-import json
-import gzip
-import zipfile
-import tarfile
 import logging
+import pathlib
 import argparse
+from datetime import datetime
 try:
   from events import MessageEvent
-  from contacts import Contact
 except ImportError:
-  class MessageEvent(object):
-    pass
-
-from datetime import datetime
+  root = pathlib.Path(__file__).resolve().parent.parent.parent
+  sys.path.insert(0, str(root))
+  from events import MessageEvent
+from contacts import Contact
+from drivers.utils import extract_data
 
 VERSION = '0.2.1'
 
@@ -57,7 +55,7 @@ class HangoutsEvent(MessageEvent):
 
 def get_events(path, contacts=None, **kwargs):
   # Implement the driver interface.
-  json_data = extract_data(path)
+  json_data = extract_data(path, 'Takeout/Hangouts/Hangouts.json', transform='json')
   if json_data is None:
     return
   for convo in read_hangouts(json_data):
@@ -479,7 +477,7 @@ def main(argv):
 
   validate_file(args.logfile)
 
-  json_data = extract_data(args.logfile)
+  json_data = extract_data(args.logfile, 'Takeout/Hangouts/Hangouts.json', transform='json')
   if json_data is None:
     return 1
 
@@ -521,36 +519,6 @@ def human_time_to_timestamp(human_time):
   except ValueError:
     dt = datetime.strptime(human_time + ' 00:00:00', '%Y-%m-%d %H:%M:%S')
   return int(time.mktime(dt.timetuple()))
-
-
-def extract_data(path):
-  if path.endswith('.json'):
-    # The raw json file.
-    with open(path) as json_file:
-      return json.load(json_file)
-  elif path.endswith('.json.gz'):
-    # A gzipped json file.
-    with gzip.open(path, mode='rt') as gzip_file:
-      return json.load(gzip_file)
-  elif path.endswith('.zip'):
-    # Assume it's a zip file exported from Google.
-    with zipfile.ZipFile(path) as zipball:
-      for member in zipball.namelist():
-        if member == 'Takeout/Hangouts/Hangouts.json':
-          json_str = str(zipball.read(member), 'utf8')
-          return json.loads(json_str)
-  elif (path.endswith('.tar.gz') or path.endswith('.tar.bz') or path.endswith('.tar.xz')
-        or path.endswith('.tgz') or path.endswith('.tbz') or path.endswith('.txz')):
-    # Assume it's a tarball exported from Google.
-    with tarfile.open(path) as tarball:
-      for member in tarball.getnames():
-        if member == 'Takeout/Hangouts/Hangouts.json':
-          json_file = tarball.extractfile(member)
-          json_str = str(json_file.read(), 'utf8')
-          return json.loads(json_str)
-  else:
-    logging.error('File ending of "{}" not recognized.'.format(os.path.basename(path)))
-  return None
 
 
 def fail(message):
