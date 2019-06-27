@@ -4,20 +4,22 @@ import argparse
 import datetime
 import logging
 import os
+import re
 import sys
+import xml.dom.minidom
 import dateutil.parser
 import kml
 
 
-def parse(kml_tree):
+def parse(kml_root):
   meta = {'dialect':None, 'title':None, 'description':None, 'start':None, 'end':None,
           'distance':None}
   markers = []
   # <kml>
-  if len(kml_tree) == 0:
+  if len(kml_root) == 0:
     return None
   # <Document>
-  for element in kml_tree[0]:
+  for element in kml_root[0]:
     if len(element) == 0:
       continue
     # <atom:author>
@@ -145,6 +147,11 @@ def make_argparser():
     help='Print the value of this key from the metadata.')
   parser.add_argument('-l', '--key-len',
     help='Print the length of this value for this key from the metadata.')
+  parser.add_argument('-d', '--dump', action='store_true',
+    help='Extract the xml content, format it, and print to stdout. Warning: The formatted xml may '
+         'not be valid or equivalent to the input. Mainly useful for human readers.')
+  parser.add_argument('-o', '--outfile', default=sys.stdout, type=argparse.FileType('w'),
+    help='Write output to this file instead of stdout.')
   parser.add_argument('-L', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   volume = parser.add_mutually_exclusive_group()
@@ -161,27 +168,37 @@ def main(argv):
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   for i, kml_path in enumerate(args.kml):
     if len(args.kml) > 1:
-      print(os.path.basename(kml_path))
-    if kml_path.endswith('.kmz') or kml_path.endswith('.zip'):
-      kml_tree = kml.read_kmz(kml_path)
+      print(os.path.basename(kml_path), file=args.outfile)
+    if args.dump:
+      if path_is_kmz(kml_path):
+        kml_bytes = kml.extract_from_zip(kml_path, 'doc.kml')
+        kml_string = str(kml_bytes, 'utf8')
+      else:
+        with open(kml_path, 'r') as kml_file:
+          kml_string = kml_file.read()
+      args.outfile.write(format_xml(kml_string))
+      continue
     else:
-      kml_tree = kml.read_kml(kml_path)
-    meta, markers = parse(kml_tree)
+      if path_is_kmz(kml_path):
+        kml_root = kml.read_kmz(kml_path)
+      else:
+        kml_root = kml.read_kml(kml_path)
+    meta, markers = parse(kml_root)
     if args.key:
       if args.key == 'markers':
         for marker in markers:
-          print(marker['name'])
+          print(marker['name'], file=args.outfile)
       else:
-        print(meta[args.key])
+        print(meta[args.key], file=args.outfile)
     elif args.key_len:
       if args.key_len == 'markers':
-        print(len(markers))
+        print(len(markers), file=args.outfile)
       else:
         value = meta[args.key_len]
         if value is None:
-          print(0)
+          print(0, file=args.outfile)
         else:
-          print(len(value))
+          print(len(value), file=args.outfile)
     else:
       duration = datetime.timedelta(seconds=round(meta['end']-meta['start']))
       if meta['distance'] is None:
@@ -194,9 +211,37 @@ duration:\t{}
 distance:\t{}
 markers:\t{}
 description:
-{description}""".format(duration, distance, len(markers), **meta))
+{description}""".format(duration, distance, len(markers), **meta), file=args.outfile)
     if len(args.kml) > 1 and i < len(args.kml)-1:
-      print()
+      print(file=args.outfile)
+
+
+def path_is_kmz(path):
+  if path.endswith('.kmz') or path.endswith('.zip'):
+    return True
+  else:
+    return False
+
+
+def format_xml(input_str):
+  """Quick and dirty way of prettifying XML.
+  Uses xml.dom.minidom's toprettyxml() method, fixing some of the quirks of its output.
+  WARNING: This uses some regex hacks and may not yield output equivalent to the input."""
+  output = []
+  dom_str = xml.dom.minidom.parseString(input_str).toprettyxml(indent='  ')
+  # Remove newlines inserted at the start of string content.
+  dom_str = re.sub(r'<([^>\n\t]+)>\n<!\[CDATA\[', r'<\1><![CDATA[', dom_str)
+  for line in dom_str.splitlines():
+    # Remove empty lines.
+    if not line.strip():
+      continue
+    # Remove randomly inserted indents at the end of string content.
+    old_line = None
+    while line != old_line:
+      old_line = line
+      line = line.replace(']]>  ', ']]>')
+    output.append(line)
+  return '\n'.join(output)
 
 
 def fail(message):

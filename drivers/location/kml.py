@@ -15,9 +15,14 @@ def read_kml(kml_path):
 def read_kmz(kmz_path):
   """Give the path to a .kmz file and this will return an ElementTree of the doc.kml.
   The ElementTree will be from defusedxml."""
-  kmz_file = zipfile.ZipFile(kmz_path, 'r')
-  kml_string = kmz_file.open('doc.kml', 'r').read()
+  kml_string = extract_from_zip(kmz_path, 'doc.kml')
   return defusedxml.ElementTree.fromstring(kml_string)
+
+
+def extract_from_zip(zip_path, file_path):
+  with zipfile.ZipFile(zip_path, 'r') as zip_file:
+    contents = zip_file.open(file_path, 'r').read()
+  return contents
 
 
 def parse_track(track_element):
