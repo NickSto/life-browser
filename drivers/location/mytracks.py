@@ -143,7 +143,7 @@ def parse_marker(marker_element):
 def make_argparser():
   parser = argparse.ArgumentParser(description='Parse a .kml or .kmz track.')
   parser.add_argument('kml', metavar='kml/kmz', nargs='+',
-    help='The .kml or .kmz file(s).')
+    help='The inputs. Can be kml or kmz files, or directories containing them.')
   parser.add_argument('-k', '--key',
     help='Print the value of this key from the metadata.')
   parser.add_argument('-l', '--key-len',
@@ -173,7 +173,15 @@ def main(argv):
   parser = make_argparser()
   args = parser.parse_args(argv[1:])
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
-  for i, kml_path in enumerate(args.kml):
+  # Gather list of input files.
+  kml_paths = []
+  for input_path in args.kml:
+    if os.path.isdir(input_path):
+      kml_paths.extend(find_kmls(input_path))
+    else:
+      kml_paths.append(input_path)
+  # Process each input file.
+  for i, kml_path in enumerate(kml_paths):
     # Read input file.
     if args.dump:
       # If --dump, format and print the xml and continue.
@@ -257,6 +265,15 @@ def format_xml(input_str):
       line = line.replace(']]>  ', ']]>')
     output.append(line)
   return '\n'.join(output)
+
+
+def find_kmls(root_dir):
+  kml_paths = []
+  for dirpath, dirnames, filenames in os.walk(root_dir):
+    for filename in filenames:
+      if filename.endswith('.kml') or filename.endswith('.kmz'):
+        kml_paths.append(os.path.join(dirpath, filename))
+  return kml_paths
 
 
 def fail(message):
