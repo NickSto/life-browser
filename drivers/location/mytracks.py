@@ -148,18 +148,24 @@ def make_argparser():
     help='Print the value of this key from the metadata.')
   parser.add_argument('-l', '--key-len',
     help='Print the length of this value for this key from the metadata.')
-  parser.add_argument('-d', '--dump', action='store_true',
+  parser.add_argument('-L', '--location', nargs=2, type=float,
+    help='Only print data from tracks that went near this location, given by a latitude/longitude '
+         'pair.')
+  parser.add_argument('-d', '--distance', type=float, default=2,
+    help='When using --location, only print tracks that went within this many miles of the '
+         'location. Default: %(default)s mi')
+  parser.add_argument('-D', '--dump', action='store_true',
     help='Extract the xml content, format it, and print to stdout. Warning: The formatted xml may '
          'not be valid or equivalent to the input. Mainly useful for human readers.')
   parser.add_argument('-o', '--outfile', default=sys.stdout, type=argparse.FileType('w'),
     help='Write output to this file instead of stdout.')
-  parser.add_argument('-L', '--log', type=argparse.FileType('w'), default=sys.stderr,
+  parser.add_argument('-g', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   volume = parser.add_mutually_exclusive_group()
   volume.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
     default=logging.WARNING)
   volume.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
-  volume.add_argument('-D', '--debug', dest='volume', action='store_const', const=logging.DEBUG)
+  volume.add_argument('--debug', dest='volume', action='store_const', const=logging.DEBUG)
   return parser
 
 
@@ -168,8 +174,6 @@ def main(argv):
   args = parser.parse_args(argv[1:])
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
   for i, kml_path in enumerate(args.kml):
-    if len(args.kml) > 1:
-      print(os.path.basename(kml_path), file=args.outfile)
     # Read input file.
     if args.dump:
       # If --dump, format and print the xml and continue.
@@ -188,7 +192,13 @@ def main(argv):
         kml_root = kml.read_kml(kml_path)
     # Parse the kml.
     meta, track, markers = parse(kml_root)
+    # Filter by location, if requested.
+    if args.location:
+      if not kml.is_track_near(track, args.location, args.distance):
+        continue
     # Print the requested output.
+    if len(args.kml) > 1 and not (args.key or args.key_len):
+      print(os.path.basename(kml_path), file=args.outfile)
     if args.key:
       if args.key == 'markers':
         for marker in markers:
@@ -217,7 +227,7 @@ distance:\t{}
 markers:\t{}
 description:
 {description}""".format(duration, distance, len(markers), **meta), file=args.outfile)
-    if len(args.kml) > 1 and i < len(args.kml)-1:
+    if len(args.kml) > 1 and i < len(args.kml)-1 and not (args.key or args.key_len):
       print(file=args.outfile)
 
 

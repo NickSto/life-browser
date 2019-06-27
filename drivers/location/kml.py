@@ -71,6 +71,15 @@ def parse_coord(coord_str, type):
   return latitude, longitude, altitude
 
 
+def is_track_near(track, location, thres):
+  for point in track:
+    lat, lon = point[:2]
+    distance = get_lat_long_distance(lat, lon, location[0], location[1])
+    if distance <= thres:
+      return True
+  return False
+
+
 def get_lat_long_distance(lat1, lon1, lat2, lon2):
   """Use haversine formula to calculate the distance between two points on Earth.
   Takes two latitude/longitude pairs and returns the distance in kilometers."""
