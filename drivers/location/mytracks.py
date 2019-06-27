@@ -58,7 +58,8 @@ def parse(kml_root):
                 meta['end'] = dateutil.parser.parse(sub2element.text).timestamp()
           # <gx:MultiTrack>
           elif subelement.tag == '{http://www.google.com/kml/ext/2.2}MultiTrack':
-            meta['distance'] = kml.parse_track(subelement)
+            track = kml.parse_track(subelement)
+            meta['distance'] = kml.get_total_distance(track)
       # Get start/end timestamps for My Tracks files.
       elif meta['dialect'] == 'mytracks':
         timestamp, placemark_type = parse_mytracks_timestamp(element)
@@ -76,7 +77,7 @@ def parse(kml_root):
       if start and end:
         meta['start'] = start
         meta['end'] = end
-  return meta, markers
+  return meta, track, markers
 
 
 def parse_dialect(name):
@@ -169,7 +170,9 @@ def main(argv):
   for i, kml_path in enumerate(args.kml):
     if len(args.kml) > 1:
       print(os.path.basename(kml_path), file=args.outfile)
+    # Read input file.
     if args.dump:
+      # If --dump, format and print the xml and continue.
       if path_is_kmz(kml_path):
         kml_bytes = kml.extract_from_zip(kml_path, 'doc.kml')
         kml_string = str(kml_bytes, 'utf8')
@@ -183,7 +186,9 @@ def main(argv):
         kml_root = kml.read_kmz(kml_path)
       else:
         kml_root = kml.read_kml(kml_path)
-    meta, markers = parse(kml_root)
+    # Parse the kml.
+    meta, track, markers = parse(kml_root)
+    # Print the requested output.
     if args.key:
       if args.key == 'markers':
         for marker in markers:

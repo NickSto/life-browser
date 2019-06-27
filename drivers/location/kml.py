@@ -26,8 +26,9 @@ def extract_from_zip(zip_path, file_path):
 
 
 def parse_track(track_element):
-  distance = 0
-  lat = lon = last_lat = last_lon = None
+  """Parse the time/location points from a track element.
+  Argument: the enclosing <gx:MultiTrack> containing one or more <gx:Track>s."""
+  track = []
   for element in track_element:
     # <gx:Track>
     if element.tag == '{http://www.google.com/kml/ext/2.2}Track':
@@ -35,10 +36,19 @@ def parse_track(track_element):
         # <gx:coord>
         if subelement.tag == '{http://www.google.com/kml/ext/2.2}coord':
           lat, lon, alt = parse_coord(subelement.text, 'gx')
-          if last_lat is not None and last_lon is not None:
-            distance += get_lat_long_distance(lat, lon, last_lat, last_lon)
-          last_lat = lat
-          last_lon = lon
+          track.append((lat, lon, alt))
+  return track
+
+
+def get_total_distance(track):
+  distance = 0
+  lat = lon = last_lat = last_lon = None
+  for point in track:
+    lat, lon = point[:2]
+    if last_lat is not None and last_lon is not None:
+      distance += get_lat_long_distance(lat, lon, last_lat, last_lon)
+    last_lat = lat
+    last_lon = lon
   if lat is None or last_lat is None or lon is None or last_lon is None:
     return None
   else:
