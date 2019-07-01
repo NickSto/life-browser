@@ -1,8 +1,14 @@
+import logging
 import math
 import zipfile
+import dateutil
 import defusedxml.ElementTree
 
 EARTH_RADIUS = 6371  # Radius of Earth in km.
+
+
+def parse_kml_str(kml_str):
+  return defusedxml.ElementTree.fromstring(kml_str)
 
 
 def read_kml(kml_path):
@@ -15,8 +21,8 @@ def read_kml(kml_path):
 def read_kmz(kmz_path):
   """Give the path to a .kmz file and this will return an ElementTree of the doc.kml.
   The ElementTree will be from defusedxml."""
-  kml_string = extract_from_zip(kmz_path, 'doc.kml')
-  return defusedxml.ElementTree.fromstring(kml_string)
+  kml_str = extract_from_zip(kmz_path, 'doc.kml')
+  return parse_kml_str(kml_str)
 
 
 def extract_from_zip(zip_path, file_path):
@@ -29,22 +35,70 @@ def parse_track(track_element):
   """Parse the time/location points from a track element.
   Argument: the enclosing <gx:MultiTrack> containing one or more <gx:Track>s."""
   track = []
+  point = (None,)
   for element in track_element:
     # <gx:Track>
     if element.tag == '{http://www.google.com/kml/ext/2.2}Track':
       for subelement in element:
+        # <when>
+        if subelement.tag == '{http://www.opengis.net/kml/2.2}when':
+          when = dateutil.parser.parse(subelement.text).timestamp()
+          point = (when,)
         # <gx:coord>
-        if subelement.tag == '{http://www.google.com/kml/ext/2.2}coord':
-          lat, lon, alt = parse_coord(subelement.text, 'gx')
-          track.append((lat, lon, alt))
+        elif subelement.tag == '{http://www.google.com/kml/ext/2.2}coord':
+          point += parse_coord(subelement.text, 'gx')
+        if len(point) == 4:
+          track.append(point)
+          point = (None,)
   return track
+
+
+def filter_track(track, speed_limit=2000, alt_limit=100000):
+  """Remove obviously inaccurate points from track.
+  Removes points at impossible altitudes, impossibly far from neighboring points, or which occurred
+  before the previous point (no time travel).
+  `speed_limit` is in km/h
+  `alt_limit` is in feet"""
+  # See example-mytracks6.xml for the sort of errors this is designed for.
+  new_track = []
+  speed_limit_km_sec = speed_limit/60/60
+  last_lat = last_lon = last_when = None
+  for point in track:
+    when, lat, lon, alt = point[:4]
+    # Too high?
+    if alt is not None and alt > alt_limit:
+      continue
+    # Too fast?
+    if all([value is not None for value in (lat, lon, when, last_lat, last_lon, last_when)]):
+      distance = get_lat_long_distance(lat, lon, last_lat, last_lon)
+      duration = when - last_when
+      # Calculate speed.
+      if duration < 0:
+        # Negative time (out of order points or wrong timestamps).
+        continue
+      elif duration == 0:
+        if distance == 0:
+          # Zero distance over zero time.
+          speed = 0
+        else:
+          # Infinite speed.
+          continue
+      else:
+        speed = distance/duration
+      if speed > speed_limit_km_sec:
+        continue
+    last_lat = lat
+    last_lon = lon
+    last_when = when
+    new_track.append(point)
+  return new_track
 
 
 def get_total_distance(track):
   distance = 0
   lat = lon = last_lat = last_lon = None
   for point in track:
-    lat, lon = point[:2]
+    when, lat, lon = point[:3]
     if last_lat is not None and last_lon is not None:
       distance += get_lat_long_distance(lat, lon, last_lat, last_lon)
     last_lat = lat
@@ -73,7 +127,7 @@ def parse_coord(coord_str, type):
 
 def is_track_near(track, location, thres):
   for point in track:
-    lat, lon = point[:2]
+    when, lat, lon = point[:3]
     distance = get_lat_long_distance(lat, lon, location[0], location[1])
     if distance <= thres:
       return True
