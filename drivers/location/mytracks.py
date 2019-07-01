@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Parser for the KML format output by Google's My Tracks, plus derivative formats."""
 import argparse
+import collections
 import datetime
 import logging
 import os
@@ -13,7 +14,7 @@ import dateutil.parser
 import kml
 
 
-def parse(kml_root):
+def parse(kml_root, parse_track=True):
   meta = {'dialect':None, 'title':None, 'description':None, 'start':None, 'end':None,
           'distance':None}
   markers = []
@@ -60,7 +61,7 @@ def parse(kml_root):
               elif sub2element.tag == '{http://www.opengis.net/kml/2.2}end':
                 meta['end'] = dateutil.parser.parse(sub2element.text).timestamp()
           # <gx:MultiTrack>
-          elif subelement.tag == '{http://www.google.com/kml/ext/2.2}MultiTrack':
+          elif subelement.tag == '{http://www.google.com/kml/ext/2.2}MultiTrack' and parse_track:
             track = kml.parse_track(subelement)
             #TODO: Measure distance elsewhere?
             meta['distance'] = kml.get_total_distance(track)
@@ -132,10 +133,15 @@ def parse_timestamps_from_title(title):
 
 
 def parse_marker(marker_element):
-  marker = {'name':None, 'description':None, 'timestamp':None, 'lat':None, 'long':None}
+  marker = {'name':None, 'description':None, 'timestamp':None, 'lat':None, 'long':None,
+            'meta':{}}
   for element in marker_element:
     if element.tag == '{http://www.opengis.net/kml/2.2}name':
-      marker['name'] = element.text
+      name = element.text
+      if name.lower().replace(' ', '') == '!unknown':
+        marker['name'] = None
+      else:
+        marker['name'] = element.text
     elif element.tag == '{http://www.opengis.net/kml/2.2}description':
       marker['description'] = element.text
     elif (element.tag == '{http://www.opengis.net/kml/2.2}Point' and len(element) > 0 and
@@ -144,10 +150,40 @@ def parse_marker(marker_element):
     elif (element.tag == '{http://www.opengis.net/kml/2.2}TimeStamp' and len(element) > 0 and
         element[0].tag == '{http://www.opengis.net/kml/2.2}when'):
       marker['timestamp'] = dateutil.parser.parse(element[0].text).timestamp()
+  if marker['description'] is not None:
+    marker['meta'] = parse_meta_markup(marker['description'])
   if any([v is None for v in marker.values()]):
     return None
   else:
     return marker
+
+
+def parse_meta_markup(text):
+  """Parse out my metadata notation from a string."""
+  meta = {}
+  for line_raw in text.splitlines():
+    line = line_raw.strip()
+    if not line.startswith('!'):
+      continue
+    fields = line[1:].split(':')
+    if len(fields)<= 0:
+      continue
+    elif len(fields) == 1:
+      value = True
+    elif len(fields) == 2:
+      value = fields[1].strip()
+    elif len(fields) > 2:
+      value = ':'.join(fields[1:]).strip()
+    key = fields[0].strip().lower()
+    try:
+      value_list = [element.strip() for element in value.split(';')]
+    except AttributeError:
+      value_list = [value]
+    if len(value_list) > 1:
+      meta[key] = value_list
+    else:
+      meta[key] = value
+  return meta
 
 
 ########## Command line interface ##########
@@ -157,26 +193,36 @@ def make_argparser():
   parser = argparse.ArgumentParser(description='Parse a .kml or .kmz track.')
   parser.add_argument('inputs', metavar='kml/kmz', nargs='+',
     help='The inputs. Can be kml or kmz files, or directories containing them.')
-  parser.add_argument('-k', '--key',
-    help='Print the value of this key from the metadata.')
-  parser.add_argument('-l', '--key-len',
-    help='Print the length of this value for this key from the metadata.')
-  parser.add_argument('-F', '--filename',
-    help='Only print data from the track matching this filename. Useful when reading a tarball.')
-  parser.add_argument('-L', '--location', nargs=2, type=float,
-    help='Only print data from tracks that went near this location, given by a latitude/longitude '
-         'pair.')
-  parser.add_argument('-d', '--distance', type=float, default=2,
-    help='When using --location, only print tracks that went within this many miles of the '
-         'location. Default: %(default)s mi')
-  parser.add_argument('-D', '--dump', action='store_true',
+  output = parser.add_argument_group('Output')
+  output.add_argument('-k', '--key',
+    help='Print the value of this key from the metadata. Special keys: "markers" - print the name '
+         'of each marker.')
+  output.add_argument('-l', '--key-len',
+    help='Print the string length of this value for this key from the metadata.')
+  output.add_argument('-K', '--marker-key',
+    help='Print the value of this key from marker metadata.')
+  output.add_argument('-D', '--dump', action='store_true',
     help='Extract the xml content, format it, and print to stdout. Warning: The formatted xml may '
          'not be valid or equivalent to the input. Mainly useful for human readers.')
-  parser.add_argument('-o', '--outfile', default=sys.stdout, type=argparse.FileType('w'),
+  output.add_argument('-o', '--outfile', default=sys.stdout, type=argparse.FileType('w'),
     help='Write output to this file instead of stdout.')
-  parser.add_argument('-g', '--log', type=argparse.FileType('w'), default=sys.stderr,
+  filter = parser.add_argument_group('Filtering')
+  filter.add_argument('-F', '--filename',
+    help='Only print data from the track matching this filename. Useful when reading a tarball.')
+  filter.add_argument('-L', '--location', nargs=2, type=float,
+    help='Only print data from tracks that went near this location, given by a latitude/longitude '
+         'pair.')
+  filter.add_argument('-d', '--distance', type=float, default=2,
+    help='When using --location, only print tracks that went within this many miles of the '
+         'location. Default: %(default)s mi')
+  filter.add_argument('-M', '--marker-meta', nargs=2, metavar=('KEY', 'VALUE'),
+    help='Only print data from tracks with markers whose metadata matches this key/value pair. '
+         'If the metadata value is a list, only one element needs to match your query (case-'
+         'insensitive).')
+  log = parser.add_argument_group('Logging')
+  log.add_argument('-g', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
-  volume = parser.add_mutually_exclusive_group()
+  volume = log.add_mutually_exclusive_group()
   volume.add_argument('-q', '--quiet', dest='volume', action='store_const', const=logging.CRITICAL,
     default=logging.WARNING)
   volume.add_argument('-v', '--verbose', dest='volume', action='store_const', const=logging.INFO)
@@ -188,15 +234,26 @@ def main(argv):
   parser = make_argparser()
   args = parser.parse_args(argv[1:])
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
+  summarize = not (args.key or args.key_len or args.marker_key)
+  if summarize or args.key in ('distance', 'start', 'end', 'duration') or args.location:
+    parse_track = True
+  else:
+    parse_track = False
   if len(args.inputs) == 1 and (args.inputs[0].endswith('.kml') or args.inputs[0].endswith('.kmz')):
     single_input = True
   else:
     single_input = None
-  # Process each input file.
+  if args.marker_meta:
+    marker_key, marker_value = args.marker_meta
+    if marker_value.lower() == 'true':
+      marker_value = True
+    elif marker_value.lower() == 'false':
+      marker_value = False
   if args.dump:
     out_format = 'str'
   else:
     out_format = 'xml'
+  # Process each input file.
   for i, (kml_path, kml_data) in enumerate(extract_inputs(args.inputs, out_format)):
     filename = os.path.basename(kml_path)
     if args.filename and filename != args.filename:
@@ -209,52 +266,29 @@ def main(argv):
     else:
       kml_root = kml_data
     # Parse the kml.
-    meta, track, markers = parse(kml_root)
+    meta, track, markers = parse(kml_root, parse_track=parse_track)
     track = kml.filter_track(track)
+    # Filter by marker metadata, if requested.
+    if args.marker_meta:
+      if not markers_match_metadata(markers, marker_key, marker_value):
+        continue
     # Filter by location, if requested.
     if args.location:
       if not kml.is_track_near(track, args.location, args.distance):
         continue
-    # Print the requested output.
-    if not (single_input or args.key or args.key_len):
+    # Print the values requested.
+    if summarize and not single_input:
       print(filename, file=args.outfile)
     if args.key:
-      if args.key == 'markers':
-        for marker in markers:
-          print(marker['name'], file=args.outfile)
-      else:
-        print(meta[args.key], file=args.outfile)
-    elif args.key_len:
-      if args.key_len == 'markers':
-        print(len(markers), file=args.outfile)
-      else:
-        value = meta[args.key_len]
-        if value is None:
-          print(0, file=args.outfile)
-        else:
-          print(len(value), file=args.outfile)
-    else:
-      if meta['title'] and not re.search(r'^\d{4}-\d{2}-\d{2}[ _]', meta['title']) and meta['start']:
-        date = datetime.datetime.fromtimestamp(meta['start']).strftime('%Y-%m-%d')
-        dateline = '\ndate:\t{}'.format(date)
-      else:
-        dateline = ''
-      if meta['end'] and meta['start']:
-        duration = datetime.timedelta(seconds=round(meta['end']-meta['start']))
-      else:
-        duration = None
-      if meta['distance'] is None:
-        distance = None
-      else:
-        distance = '{:0.2f}mi'.format(meta['distance']*0.6213)
-      print("""title:\t{title}{}
-dialect:\t{dialect}
-duration:\t{}
-distance:\t{}
-markers:\t{}
-description:
-{description}""".format(dateline, duration, distance, len(markers), **meta), file=args.outfile)
-    if not(single_input or args.key or args.key_len):
+      print(format_key_value(args.key, meta, markers), file=args.outfile)
+    if args.key_len:
+      print(format_key_len(args.key_len, meta, markers), file=args.outfile)
+    if args.marker_key:
+      print(format_marker_value(args.marker_key, markers), file=args.outfile)
+    # If no specific values were requested, print a summary.
+    if summarize:
+      print(format_summary(meta, markers, track), file=args.outfile)
+    if summarize and not single_input:
       print(file=args.outfile)
 
 
@@ -313,7 +347,7 @@ def extract_inputs(input_paths, out_format='xml'):
       if out_format == 'xml':
         yield file_path, kml.read_kmz(file_path)
       elif out_format == 'str':
-        kml_bytes = kml.extract_from_zip(kml_path, 'doc.kml')
+        kml_bytes = kml.extract_from_zip(file_path, 'doc.kml')
         yield file_path, str(kml_bytes, 'utf8')
     else:
       if out_format == 'xml':
@@ -321,7 +355,6 @@ def extract_inputs(input_paths, out_format='xml'):
       elif out_format == 'str':
         with open(file_path, 'r') as file:
           yield file_path, file.read()
-
 
 
 def find_kmls(root_dir):
@@ -339,6 +372,76 @@ def extract_kmls(tar_path):
       if member.endswith('.kml') or member.endswith('.kmz'):
         filehandle = tarball.extractfile(member)
         contents = str(filehandle.read(), 'utf8')
+
+
+def markers_match_metadata(markers, query_key, query_value):
+  match = False
+  for marker in markers:
+    if query_key in marker['meta']:
+      value = marker['meta'][query_key]
+      if isinstance(value, collections.abc.Iterable) and not isinstance(value, str):
+        for element in value:
+          if element.lower() == query_value:
+            match = True
+      else:
+        try:
+          if value.lower() == query_value:
+            match = True
+        except AttributeError:
+          if value == query_value:
+            match = True
+  return match
+
+
+def format_key_value(key, meta, markers):
+  if key == 'markers':
+    return '\n'.join([str(marker['name']) for marker in markers])
+  else:
+    return meta[key]
+
+
+def format_key_len(key, meta, markers):
+  if key == 'markers':
+    return len(markers)
+  else:
+    value = meta[key]
+    if value is None:
+      return 0
+    else:
+      return len(value)
+
+
+def format_marker_value(key, markers):
+  for marker in markers:
+    if key in marker['meta']:
+      value = marker['meta'][key]
+      if isinstance(value, collections.abc.Iterable) and not isinstance(value, str):
+        return ';'.join(value)
+      else:
+        return value
+
+
+def format_summary(meta, markers, track):
+  if meta['title'] and not re.search(r'^\d{4}-\d{2}-\d{2}[ _]', meta['title']) and meta['start']:
+    date = datetime.datetime.fromtimestamp(meta['start']).strftime('%Y-%m-%d')
+    dateline = '\ndate:\t{}'.format(date)
+  else:
+    dateline = ''
+  if meta['end'] and meta['start']:
+    duration = datetime.timedelta(seconds=round(meta['end']-meta['start']))
+  else:
+    duration = None
+  if meta['distance'] is None:
+    distance = None
+  else:
+    distance = '{:0.2f}mi'.format(meta['distance']*0.6213)
+  return """title:\t{title}{}
+dialect:\t{dialect}
+duration:\t{}
+distance:\t{}
+markers:\t{}
+description:
+{description}""".format(dateline, duration, distance, len(markers), **meta)
 
 
 def fail(message):
