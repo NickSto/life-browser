@@ -11,12 +11,13 @@ import sys
 import tarfile
 import xml.dom.minidom
 import dateutil.parser
+import yaml
 import kml
 
 
 def parse(kml_root, parse_track=True):
   meta = {'dialect':None, 'title':None, 'description':None, 'start':None, 'end':None,
-          'distance':None}
+          'distance':None, 'start_lat':None, 'start_lon':None, 'end_lat':None, 'end_lon':None}
   markers = []
   track = []
   # <kml>
@@ -75,6 +76,11 @@ def parse(kml_root, parse_track=True):
         marker = parse_marker(element)
         if marker is not None:
           markers.append(marker)
+    # Get the location of the start and end of the track.
+    if track:
+      meta['start_lat'], meta['start_lon'] = track[0][1:3]
+      if track[-1] != track[0]:
+        meta['end_lat'], meta['end_lon'] = track[-1][1:3]
     # If there's no start/end timestamps, get them from the first and last points in the track.
     if meta['start'] is None or meta['end'] is None:
       logging.debug('Debug: Could not find start/end times in metadata. Extracting from track..')
@@ -194,6 +200,9 @@ def parse_meta_markup(text):
 ########## Command line interface ##########
 
 
+MI_PER_KM = 0.6213
+
+
 def make_argparser():
   parser = argparse.ArgumentParser(description='Parse a .kml or .kmz track.')
   parser.add_argument('inputs', metavar='kml/kmz', nargs='+',
@@ -215,6 +224,9 @@ def make_argparser():
          'not be valid or equivalent to the input. Mainly useful for human readers.')
   output.add_argument('-o', '--outfile', default=sys.stdout, type=argparse.FileType('w'),
     help='Write output to this file instead of stdout.')
+  output.add_argument('-r', '--ref-points', type=load_reference_points,
+    help='A YAML file containing GPS coordinates of reference points to use in summaries '
+         'describing where the track is.')
   filters = parser.add_argument_group('Filtering')
   filters.add_argument('-F', '--filename',
     help='Only match the track matching this filename. Useful when reading a tarball.')
@@ -294,9 +306,9 @@ def main(argv):
     if args.location:
       if not kml.is_track_near(track, args.location, args.distance):
         continue
-    if args.start and meta['start'] and meta['start'] > args.start:
+    if args.start and meta['start'] and meta['start'] < args.start:
       continue
-    if args.end and meta['end'] and meta['end'] < args.end:
+    if args.end and meta['end'] and meta['end'] > args.end:
       continue
     # Print the values requested.
     if summarize and not single_input:
@@ -317,7 +329,7 @@ def main(argv):
         print(output, file=args.outfile)
     # If no specific values were requested, print a summary.
     if summarize:
-      print(format_summary(meta, markers, track), file=args.outfile)
+      print(format_summary(meta, markers, track, args.ref_points), file=args.outfile)
     if summarize and not single_input:
       print(file=args.outfile)
 
@@ -365,7 +377,7 @@ def extract_inputs(input_paths, out_format='xml'):
     if (ext in ('.tgz', '.tbz', '.txz') or file_path.endswith('.tar.gz') or
         file_path.endswith('.tar.bz') or file_path.endswith('.tar.xz')):
       with tarfile.open(file_path) as tarball:
-        for member in tarball.getnames():
+        for member in sorted(tarball.getnames()):
           if member.endswith('.kml') or member.endswith('.kmz'):
             file = tarball.extractfile(member)
             contents = str(file.read(), 'utf8')
@@ -390,18 +402,10 @@ def extract_inputs(input_paths, out_format='xml'):
 def find_kmls(root_dir):
   kml_paths = []
   for dirpath, dirnames, filenames in os.walk(root_dir):
-    for filename in filenames:
+    for filename in sorted(filenames):
       if filename.endswith('.kml') or filename.endswith('.kmz'):
         kml_paths.append(os.path.join(dirpath, filename))
   return kml_paths
-
-
-def extract_kmls(tar_path):
-  with tarfile.open(tar_path) as tarball:
-    for member in tarball.getnames():
-      if member.endswith('.kml') or member.endswith('.kmz'):
-        filehandle = tarball.extractfile(member)
-        contents = str(filehandle.read(), 'utf8')
 
 
 def markers_match_metavalue(markers, query_key, query_value):
@@ -427,6 +431,24 @@ def markers_match_metakey(markers, query_key):
     if query_key in marker['meta']:
       return True
   return False
+
+
+def load_reference_points(ref_path):
+  with open(ref_path) as ref_file:
+    return yaml.safe_load(ref_file)
+
+
+def find_closest_ref_point(lat, lon, ref_points):
+  if ref_points is None or lat is None or lon is None:
+    return None, None
+  min_dist = 999999
+  min_name = None
+  for name, ref_point in ref_points.items():
+    dist = kml.get_lat_long_distance(lat, lon, ref_point[0], ref_point[1])
+    if dist < min_dist:
+      min_dist = dist
+      min_name = name
+  return min_name, min_dist
 
 
 def format_key_value(key, meta, markers):
@@ -478,7 +500,7 @@ def format_marker_keys(markers):
   return '\n'.join(keys)
 
 
-def format_summary(meta, markers, track):
+def format_summary(meta, markers, track, ref_points=None):
   if meta['title'] and not re.search(r'^\d{4}-\d{2}-\d{2}[ _]', meta['title']) and meta['start']:
     date = datetime.datetime.fromtimestamp(meta['start']).strftime('%Y-%m-%d')
     dateline = '\ndate:\t{}'.format(date)
@@ -491,14 +513,31 @@ def format_summary(meta, markers, track):
   if meta['distance'] is None:
     distance = None
   else:
-    distance = '{:0.2f}mi'.format(meta['distance']*0.6213)
+    distance = '{:0.2f}mi'.format(meta['distance']*MI_PER_KM)
+  reflines = ''
+  if ref_points:
+    start_ref, start_dist = find_closest_ref_point(meta['start_lat'], meta['start_lon'], ref_points)
+    end_ref, end_dist = find_closest_ref_point(meta['end_lat'], meta['end_lon'], ref_points)
+    if start_ref == end_ref and start_ref is not None and end_ref is not None:
+      start_dist_str = '{:0.1f}'.format(start_dist*MI_PER_KM)
+      end_dist_str = '{:0.1f}'.format(end_dist*MI_PER_KM)
+      if start_dist_str == end_dist_str:
+        dist_str = start_dist_str
+      else:
+        dist_str = start_dist_str+'/'+end_dist_str
+      reflines += '\nstart/end:\t{}mi from {}'.format(dist_str, start_ref)
+    else:
+      if start_ref is not None:
+        reflines += '\nstart:\t\t{:0.1f}mi from {}'.format(start_dist*MI_PER_KM, start_ref)
+      if end_ref is not None:
+        reflines += '\nend:\t\t{:0.1f}mi from {}'.format(end_dist*MI_PER_KM, end_ref)
   return """title:\t{title}{}
 dialect:\t{dialect}
 duration:\t{}
-distance:\t{}
+distance:\t{}{}
 markers:\t{}
 description:
-{description}""".format(dateline, duration, distance, len(markers), **meta)
+{description}""".format(dateline, duration, distance, reflines, len(markers), **meta)
 
 
 def fail(message):
