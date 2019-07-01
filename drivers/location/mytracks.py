@@ -160,6 +160,11 @@ def parse_marker(marker_element):
 
 def parse_meta_markup(text):
   """Parse out my metadata notation from a string."""
+  # Note: I first started using the key/value notation at 1511921476 (2017-11-28). Before that, it
+  # was just a value (with the assumed key "type"). I only did that for about a month, though:
+  # the first occurrence of the ! notation was on 1509495819 (2017-10-31). There are only 23
+  # annotations from this period. I could manually correct them all. Note that I think there are
+  # some exceptions beyond this period, like !home.
   meta = {}
   for line_raw in text.splitlines():
     line = line_raw.strip()
@@ -201,24 +206,34 @@ def make_argparser():
     help='Print the string length of this value for this key from the metadata.')
   output.add_argument('-K', '--marker-key',
     help='Print the value of this key from marker metadata.')
+  output.add_argument('--marker-meta', action='store_true',
+    help='Print all marker metadata.')
+  output.add_argument('--marker-keys', action='store_true',
+    help='Print all keys used in marker metadata.')
   output.add_argument('-D', '--dump', action='store_true',
     help='Extract the xml content, format it, and print to stdout. Warning: The formatted xml may '
          'not be valid or equivalent to the input. Mainly useful for human readers.')
   output.add_argument('-o', '--outfile', default=sys.stdout, type=argparse.FileType('w'),
     help='Write output to this file instead of stdout.')
-  filter = parser.add_argument_group('Filtering')
-  filter.add_argument('-F', '--filename',
-    help='Only print data from the track matching this filename. Useful when reading a tarball.')
-  filter.add_argument('-L', '--location', nargs=2, type=float,
-    help='Only print data from tracks that went near this location, given by a latitude/longitude '
+  filters = parser.add_argument_group('Filtering')
+  filters.add_argument('-F', '--filename',
+    help='Only match the track matching this filename. Useful when reading a tarball.')
+  filters.add_argument('-L', '--location', nargs=2, type=float,
+    help='Only match tracks that went near this location, given by a latitude/longitude '
          'pair.')
-  filter.add_argument('-d', '--distance', type=float, default=2,
-    help='When using --location, only print tracks that went within this many miles of the '
+  filters.add_argument('-d', '--distance', type=float, default=2,
+    help='When using --location, only match tracks that went within this many miles of the '
          'location. Default: %(default)s mi')
-  filter.add_argument('-M', '--marker-meta', nargs=2, metavar=('KEY', 'VALUE'),
-    help='Only print data from tracks with markers whose metadata matches this key/value pair. '
+  filters.add_argument('-s', '--start', type=int,
+    help='Only match tracks that start after this timestamp.')
+  filters.add_argument('-e', '--end', type=int,
+    help='Only match tracks that end before this timestamp.')
+  filters.add_argument('-M', '--marker-filt-meta', nargs=2, metavar=('KEY', 'VALUE'),
+    help='Only match tracks with markers whose metadata matches this key/value pair. '
          'If the metadata value is a list, only one element needs to match your query (case-'
          'insensitive).')
+  filters.add_argument('--marker-filt-key',
+    help='Only match tracks with markers that use this key.')
   log = parser.add_argument_group('Logging')
   log.add_argument('-g', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
@@ -234,8 +249,9 @@ def main(argv):
   parser = make_argparser()
   args = parser.parse_args(argv[1:])
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
-  summarize = not (args.key or args.key_len or args.marker_key)
-  if summarize or args.key in ('distance', 'start', 'end', 'duration') or args.location:
+  summarize = not (args.key or args.key_len or args.marker_key or args.marker_keys or args.marker_meta)
+  if (summarize or args.key in ('distance', 'start', 'end', 'duration') or
+      args.location or args.start or args.end):
     parse_track = True
   else:
     parse_track = False
@@ -243,8 +259,8 @@ def main(argv):
     single_input = True
   else:
     single_input = None
-  if args.marker_meta:
-    marker_key, marker_value = args.marker_meta
+  if args.marker_filt_meta:
+    marker_key, marker_value = args.marker_filt_meta
     if marker_value.lower() == 'true':
       marker_value = True
     elif marker_value.lower() == 'false':
@@ -268,23 +284,37 @@ def main(argv):
     # Parse the kml.
     meta, track, markers = parse(kml_root, parse_track=parse_track)
     track = kml.filter_track(track)
-    # Filter by marker metadata, if requested.
-    if args.marker_meta:
-      if not markers_match_metadata(markers, marker_key, marker_value):
+    # Apply filters.
+    if args.marker_filt_meta:
+      if not markers_match_metavalue(markers, marker_key, marker_value):
         continue
-    # Filter by location, if requested.
+    if args.marker_filt_key:
+      if not markers_match_metakey(markers, args.marker_filt_key):
+        continue
     if args.location:
       if not kml.is_track_near(track, args.location, args.distance):
         continue
+    if args.start and meta['start'] and meta['start'] > args.start:
+      continue
+    if args.end and meta['end'] and meta['end'] < args.end:
+      continue
     # Print the values requested.
     if summarize and not single_input:
       print(filename, file=args.outfile)
+    outputs = []
     if args.key:
-      print(format_key_value(args.key, meta, markers), file=args.outfile)
+      outputs.append(format_key_value(args.key, meta, markers))
     if args.key_len:
-      print(format_key_len(args.key_len, meta, markers), file=args.outfile)
+      outputs.append(format_key_len(args.key_len, meta, markers))
+    if args.marker_meta:
+      outputs.append(format_marker_metadata(markers))
     if args.marker_key:
-      print(format_marker_value(args.marker_key, markers), file=args.outfile)
+      outputs.append(format_marker_value(args.marker_key, markers))
+    if args.marker_keys:
+      outputs.append(format_marker_keys(markers))
+    for output in outputs:
+      if output:
+        print(output, file=args.outfile)
     # If no specific values were requested, print a summary.
     if summarize:
       print(format_summary(meta, markers, track), file=args.outfile)
@@ -374,23 +404,29 @@ def extract_kmls(tar_path):
         contents = str(filehandle.read(), 'utf8')
 
 
-def markers_match_metadata(markers, query_key, query_value):
-  match = False
+def markers_match_metavalue(markers, query_key, query_value):
   for marker in markers:
     if query_key in marker['meta']:
       value = marker['meta'][query_key]
       if isinstance(value, collections.abc.Iterable) and not isinstance(value, str):
         for element in value:
           if element.lower() == query_value:
-            match = True
+            return True
       else:
         try:
           if value.lower() == query_value:
-            match = True
+            return True
         except AttributeError:
           if value == query_value:
-            match = True
-  return match
+            return True
+  return False
+
+
+def markers_match_metakey(markers, query_key):
+  for marker in markers:
+    if query_key in marker['meta']:
+      return True
+  return False
 
 
 def format_key_value(key, meta, markers):
@@ -411,14 +447,35 @@ def format_key_len(key, meta, markers):
       return len(value)
 
 
-def format_marker_value(key, markers):
+def format_marker_metadata(markers):
+  lines = []
   for marker in markers:
-    if key in marker['meta']:
-      value = marker['meta'][key]
+    for key, value in marker['meta'].items():
       if isinstance(value, collections.abc.Iterable) and not isinstance(value, str):
-        return ';'.join(value)
+        value_str = ';'.join(value)
       else:
-        return value
+        value_str = value
+      lines.append('!{}:{}'.format(key, value_str))
+  return '\n'.join(lines)
+
+
+def format_marker_value(key, markers):
+  values = []
+  for marker in markers:
+    for key, value in marker['meta'].items():
+      if isinstance(value, collections.abc.Iterable) and not isinstance(value, str):
+        values.append(';'.join(value))
+      else:
+        values.append(value)
+  return '\n'.join(values)
+
+
+def format_marker_keys(markers):
+  keys = []
+  for marker in markers:
+    for key in marker['meta'].keys():
+      keys.append(key)
+  return '\n'.join(keys)
 
 
 def format_summary(meta, markers, track):
@@ -455,5 +512,5 @@ def fail(message):
 if __name__ == '__main__':
   try:
     sys.exit(main(sys.argv))
-  except BrokenPipeError:
+  except (BrokenPipeError, KeyboardInterrupt):
     pass

@@ -21,6 +21,7 @@ def read_kml(kml_path):
 def read_kmz(kmz_path):
   """Give the path to a .kmz file and this will return an ElementTree of the doc.kml.
   The ElementTree will be from defusedxml."""
+  #TODO: The .kml file can actually be named anything, as long as there's only one .kml.
   kml_str = extract_from_zip(kmz_path, 'doc.kml')
   return parse_kml_str(kml_str)
 
