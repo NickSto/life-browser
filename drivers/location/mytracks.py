@@ -271,6 +271,8 @@ def main(argv):
     single_input = True
   else:
     single_input = None
+  if args.ref_points:
+    min_ref_dist = get_min_separation(args.ref_points)
   if args.marker_filt_meta:
     marker_key, marker_value = args.marker_filt_meta
     if marker_value.lower() == 'true':
@@ -329,7 +331,7 @@ def main(argv):
         print(output, file=args.outfile)
     # If no specific values were requested, print a summary.
     if summarize:
-      print(format_summary(meta, markers, track, args.ref_points), file=args.outfile)
+      print(format_summary(meta, markers, track, args.ref_points, min_ref_dist), file=args.outfile)
     if summarize and not single_input:
       print(file=args.outfile)
 
@@ -438,17 +440,37 @@ def load_reference_points(ref_path):
     return yaml.safe_load(ref_file)
 
 
-def find_closest_ref_point(lat, lon, ref_points):
-  if ref_points is None or lat is None or lon is None:
-    return None, None
+def get_min_separation(ref_points):
+  """Get the minimum distance between any two reference points."""
   min_dist = 999999
+  coords = [ref['coords'] for ref in ref_points.values()]
+  for i in range(len(coords)):
+    lat1, lon1 = coords[i]
+    for j in range(i+1, len(coords)):
+      lat2, lon2 = coords[j]
+      dist = kml.get_lat_long_distance(lat1, lon1, lat2, lon2)
+      min_dist = min(dist, min_dist)
+  return min_dist
+
+
+def find_closest_ref_point(lat, lon, ref_points, min_ref_dist=0):
+  if ref_points is None or lat is None or lon is None:
+    return None, None, None
+  min_dist = 999999
+  min_area = None
   min_name = None
-  for name, ref_point in ref_points.items():
-    dist = kml.get_lat_long_distance(lat, lon, ref_point[0], ref_point[1])
+  for area, ref_point in ref_points.items():
+    ref_lat, ref_lon = ref_point['coords']
+    dist = kml.get_lat_long_distance(lat, lon, ref_lat, ref_lon)
     if dist < min_dist:
       min_dist = dist
-      min_name = name
-  return min_name, min_dist
+      min_area = area
+      min_name = ref_point['name']
+      # If this point is closer than any two reference points are to each other, we've found the
+      # closest point and can save some time.
+      if dist < min_ref_dist:
+        return min_dist, min_name, min_area
+  return min_dist, min_name, min_area
 
 
 def format_key_value(key, meta, markers):
@@ -500,7 +522,7 @@ def format_marker_keys(markers):
   return '\n'.join(keys)
 
 
-def format_summary(meta, markers, track, ref_points=None):
+def format_summary(meta, markers, track, ref_points=None, min_ref_dist=0):
   if meta['title'] and not re.search(r'^\d{4}-\d{2}-\d{2}[ _]', meta['title']) and meta['start']:
     date = datetime.datetime.fromtimestamp(meta['start']).strftime('%Y-%m-%d')
     dateline = '\ndate:\t{}'.format(date)
@@ -516,21 +538,23 @@ def format_summary(meta, markers, track, ref_points=None):
     distance = '{:0.2f}mi'.format(meta['distance']*MI_PER_KM)
   reflines = ''
   if ref_points:
-    start_ref, start_dist = find_closest_ref_point(meta['start_lat'], meta['start_lon'], ref_points)
-    end_ref, end_dist = find_closest_ref_point(meta['end_lat'], meta['end_lon'], ref_points)
-    if start_ref == end_ref and start_ref is not None and end_ref is not None:
+    start_dist, start_name, start_area = find_closest_ref_point(meta['start_lat'], meta['start_lon'],
+                                                                ref_points, min_ref_dist)
+    end_dist, end_name, end_area = find_closest_ref_point(meta['end_lat'], meta['end_lon'],
+                                                          ref_points, min_ref_dist)
+    if start_name == end_name and start_name is not None and end_name is not None:
       start_dist_str = '{:0.1f}'.format(start_dist*MI_PER_KM)
       end_dist_str = '{:0.1f}'.format(end_dist*MI_PER_KM)
       if start_dist_str == end_dist_str:
         dist_str = start_dist_str
       else:
         dist_str = start_dist_str+'/'+end_dist_str
-      reflines += '\nstart/end:\t{}mi from {}'.format(dist_str, start_ref)
+      reflines += '\nstart/end:\t{} ({}mi from {})'.format(start_area, dist_str, start_name)
     else:
-      if start_ref is not None:
-        reflines += '\nstart:\t\t{:0.1f}mi from {}'.format(start_dist*MI_PER_KM, start_ref)
-      if end_ref is not None:
-        reflines += '\nend:\t\t{:0.1f}mi from {}'.format(end_dist*MI_PER_KM, end_ref)
+      if start_name is not None:
+        reflines += '\nstart:\t\t{} ({:0.1f}mi from {})'.format(start_area, start_dist*MI_PER_KM, start_name)
+      if end_name is not None:
+        reflines += '\nend:\t\t{} ({:0.1f}mi from {})'.format(end_area, end_dist*MI_PER_KM, end_name)
   return """title:\t{title}{}
 dialect:\t{dialect}
 duration:\t{}
