@@ -271,8 +271,6 @@ def main(argv):
     single_input = True
   else:
     single_input = None
-  if args.ref_points:
-    min_ref_dist = get_min_separation(args.ref_points)
   if args.marker_filt_meta:
     marker_key, marker_value = args.marker_filt_meta
     if marker_value.lower() == 'true':
@@ -331,7 +329,7 @@ def main(argv):
         print(output, file=args.outfile)
     # If no specific values were requested, print a summary.
     if summarize:
-      print(format_summary(meta, markers, track, args.ref_points, min_ref_dist), file=args.outfile)
+      print(format_summary(meta, markers, track, args.ref_points), file=args.outfile)
     if summarize and not single_input:
       print(file=args.outfile)
 
@@ -440,20 +438,7 @@ def load_reference_points(ref_path):
     return yaml.safe_load(ref_file)
 
 
-def get_min_separation(ref_points):
-  """Get the minimum distance between any two reference points."""
-  min_dist = 999999
-  coords = [ref['coords'] for ref in ref_points.values()]
-  for i in range(len(coords)):
-    lat1, lon1 = coords[i]
-    for j in range(i+1, len(coords)):
-      lat2, lon2 = coords[j]
-      dist = kml.get_lat_long_distance(lat1, lon1, lat2, lon2)
-      min_dist = min(dist, min_dist)
-  return min_dist
-
-
-def find_closest_ref_point(lat, lon, ref_points, min_ref_dist=0):
+def find_closest_ref_point(lat, lon, ref_points):
   if ref_points is None or lat is None or lon is None:
     return None, None, None
   min_dist = 999999
@@ -466,10 +451,6 @@ def find_closest_ref_point(lat, lon, ref_points, min_ref_dist=0):
       min_dist = dist
       min_area = area
       min_name = ref_point['name']
-      # If this point is closer than any two reference points are to each other, we've found the
-      # closest point and can save some time.
-      if dist < min_ref_dist:
-        return min_dist, min_name, min_area
   return min_dist, min_name, min_area
 
 
@@ -522,7 +503,7 @@ def format_marker_keys(markers):
   return '\n'.join(keys)
 
 
-def format_summary(meta, markers, track, ref_points=None, min_ref_dist=0):
+def format_summary(meta, markers, track, ref_points=None):
   if meta['title'] and not re.search(r'^\d{4}-\d{2}-\d{2}[ _]', meta['title']) and meta['start']:
     date = datetime.datetime.fromtimestamp(meta['start']).strftime('%Y-%m-%d')
     dateline = '\ndate:\t{}'.format(date)
@@ -539,9 +520,9 @@ def format_summary(meta, markers, track, ref_points=None, min_ref_dist=0):
   reflines = ''
   if ref_points:
     start_dist, start_name, start_area = find_closest_ref_point(meta['start_lat'], meta['start_lon'],
-                                                                ref_points, min_ref_dist)
+                                                                ref_points)
     end_dist, end_name, end_area = find_closest_ref_point(meta['end_lat'], meta['end_lon'],
-                                                          ref_points, min_ref_dist)
+                                                          ref_points)
     if start_name == end_name and start_name is not None and end_name is not None:
       start_dist_str = '{:0.1f}'.format(start_dist*MI_PER_KM)
       end_dist_str = '{:0.1f}'.format(end_dist*MI_PER_KM)
