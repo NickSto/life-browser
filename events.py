@@ -127,11 +127,26 @@ class CallEvent(Event):
 
 class LocationEvent(Event):
 
-  def __init__(self, stream, format, start, lat, long, accuracy, raw=None):
+  def __init__(self, stream, format, start, nw_lat, nw_lon, accuracy, raw=None):
     super().__init__(stream, format, start, raw=raw)
-    self.lat = lat
-    self.long = long
+    self.lat = self.nw_lat = nw_lat
+    self.lon = self.nw_lon = nw_lon
     self.accuracy = accuracy
+
+  #TODO: __eq__()
+
+
+class LocationTrackEvent(Event):
+
+  def __init__(self, stream, format, start, end, nw_lat, nw_lon, se_lat, se_lon, track, raw=None):
+    super().__init__(stream, format, start, end=end, raw=raw)
+    self.nw_lat = nw_lat
+    self.nw_lon = nw_lon
+    self.se_lat = se_lat
+    self.se_lon = se_lon
+    self.track = track
+
+  #TODO: __eq__()
 
 
 def format_time(total_seconds):
