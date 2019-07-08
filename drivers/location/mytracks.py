@@ -517,6 +517,10 @@ def format_summary(meta, markers, track, ref_points=None):
     distance = None
   else:
     distance = '{:0.2f}mi'.format(meta['distance']*MI_PER_KM)
+  if track:
+    track_len = len(track)
+  else:
+    track_len = 0
   reflines = ''
   if ref_points:
     start_dist, start_name, start_area = find_closest_ref_point(meta['start_lat'], meta['start_lon'],
@@ -539,10 +543,10 @@ def format_summary(meta, markers, track, ref_points=None):
   return """title:\t{title}{}
 dialect:\t{dialect}
 duration:\t{}
-distance:\t{}{}
+distance:\t{} ({} points){}
 markers:\t{}
 description:
-{description}""".format(dateline, duration, distance, reflines, len(markers), **meta)
+{description}""".format(dateline, duration, distance, track_len, reflines, len(markers), **meta)
 
 
 def fail(message):
