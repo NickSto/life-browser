@@ -1,13 +1,16 @@
 certifi==2018.4.16
 chardet==3.0.4
 defusedxml==0.6.0
+Django==2.2.3
 future==0.16.0
 html5lib==1.0.1
 idna==2.6
 pkg-resources==0.0.0
 python-dateutil==2.8.0
+pytz==2019.1
 requests==2.22.0
 six==1.11.0
+sqlparse==0.3.0
 urllib3==1.25.3
 vobject==0.9.5
 webencodings==0.5.1
