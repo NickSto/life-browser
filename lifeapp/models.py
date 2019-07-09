@@ -1,6 +1,12 @@
 from datetime import datetime
 import logging
-from django.db import models
+import django.conf
+import django.core.exceptions
+try:
+  django.conf.settings.DEBUG
+  from django.db import models
+except django.core.exceptions.ImproperlyConfigured as error:
+  from shims import models
 log = logging.getLogger(__name__)
 
 
@@ -85,8 +91,8 @@ class MessageEvent(Event):
     return self._recipients.split('\x00')
 
   @recipients.setter
-  def recipients(self, value):
-    self._recipients = '\x00'.join(value)
+  def recipients(self, values):
+    self._recipients = '\x00'.join([str(value) for value in values])
 
   def __str__(self):
     time_str = datetime.fromtimestamp(self.start).strftime('%H:%M:%S')

@@ -23,6 +23,8 @@ try:
 except ImportError:
   class MessageEvent(object):
     pass
+  class CallEvent(object):
+    pass
 
 
 ##### Driver interface #####

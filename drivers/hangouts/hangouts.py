@@ -9,7 +9,6 @@ provide a link to the source: https://bitbucket.org/dotcs/hangouts-log-reader/
 You can read the full license here:
 http://creativecommons.org/licenses/by-nc-sa/3.0/us/
 """
-
 import os
 import sys
 import time
@@ -18,11 +17,11 @@ import pathlib
 import argparse
 from datetime import datetime
 try:
-  from events import MessageEvent
+  from lifeapp.models import MessageEvent
 except ImportError:
   root = pathlib.Path(__file__).resolve().parent.parent.parent
   sys.path.insert(0, str(root))
-  from events import MessageEvent
+  from lifeapp.models import MessageEvent
 from contacts import Contact
 from drivers.utils import extract_data
 
@@ -42,17 +41,6 @@ METADATA = {
 }
 
 
-class HangoutsEvent(MessageEvent):
-  def __init__(self, stream, format, start, subtype, sender, recipients, message, raw):
-    super().__init__(stream, format, start, sender, recipients, message, raw=raw)
-    self.subtype = subtype
-
-  def __eq__(self, other):
-    return super().__eq__(other)
-    if self.subtype != other.subtype:
-      return False
-
-
 def get_events(path, contacts=None, **kwargs):
   # Implement the driver interface.
   json_data = extract_data(path, 'Takeout/Hangouts/Hangouts.json', transform='json')
@@ -66,16 +54,17 @@ def get_events(path, contacts=None, **kwargs):
           recipients.append(participant_to_contact(participant, contacts))
       sender_participant = convo.participants.get_by_id(event.sender_id)
       sender = participant_to_contact(sender_participant, contacts)
-      yield HangoutsEvent(
+      event = MessageEvent.create(
         stream=event.type,
         format='hangouts',
         start=event.timestamp,
-        subtype=event.type,
         sender=sender,
         recipients=recipients,
         message=event.get_formatted_message(),
         raw={'conversation':convo, 'event':event}
       )
+      # Don't .save() here, so the caller can do a much faster bulk_create().
+      yield event
 
 
 def participant_to_contact(participant, contacts=None):
