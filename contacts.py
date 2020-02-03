@@ -16,6 +16,8 @@ class ContactBook(list):
     """
     if contact.foundIn(self):
       return
+    latest_id = self.get_latest_id() or 0
+    contact.id = latest_id+1
     contact.book = self
     self.append(contact)
     self.index(contact)
@@ -114,11 +116,22 @@ class ContactBook(list):
       outputs.append(contact.formatted())
     return '\n'.join(outputs)
 
+  def get_latest_id(self):
+    latest_id = None
+    for contact in self:
+      if contact.id is not None:
+        if latest_id is None:
+          latest_id = contact.id
+        else:
+          latest_id = max(contact.id, latest_id)
+    return latest_id
+
 
 class Contact(dict):
 
   def __init__(self, book=None, is_me=None, name=None, phone=None, email=None, **kwargs):
     # The ContactBook containing this contact.
+    self.id = None
     self.book = book
     self.is_me = is_me
     self.name = name
@@ -427,6 +440,14 @@ class Contact(dict):
           return str(candidate)
       return '???'
 
+  def to_dict(self):
+    data = {}
+    for key, value in self.items():
+      data[key] = value.to_dict()
+    data['id'] = self.id
+    data['is_me'] = self.is_me
+    return data
+
   def formatted(self):
     lines = []
     line = 'Contact '+str(self)
@@ -532,6 +553,14 @@ class ContactValue(object):
       attr_strs.append('{}={!r}'.format(attr, value))
     type_str = type(self).__name__
     return '{}({})'.format(type_str, ', '.join(attr_strs))
+
+  def to_dict(self):
+    return {
+      'key': self.key,
+      'value': self.value,
+      'indexable': self.indexable,
+      'attributes': self.attributes,
+    }
 
   def formatted(self):
     output = ''
@@ -678,6 +707,11 @@ class ContactValues(ContactValue, list):
 
   def __str__(self):
     return ', '.join([str(v) for v in self])
+
+  def to_dict(self):
+    data = super().to_dict()
+    data['values'] = [val.to_dict() for val in self]
+    return data
 
   def formatted(self):
     output = ''

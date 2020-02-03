@@ -54,8 +54,13 @@ otr_status
 otr_toggle
 read_state
 self_conversation_state
-participant_data:	a list where each element seems to hold the data on one of the participants
-			in the conversation
+participant_data:	A list where each element seems to hold the data on one of the participants
+			in the conversation.
+			Note: for some reason, it seems the list sometimes does not include all the
+			actual participants. I've seen cases where the person identified as the
+			sender of one of the messages isn't included in the list (as identified by
+			the `sender_id` of the chat `event`s, trying to match it to participant
+			`gaia_id`s).
 
 participant_data
 ----------------
@@ -69,7 +74,9 @@ participant_type
 new_invitation_status
 invitation_status
 fallback_name:		(optional) A name for the participant. Could be a real name, a phone number,
-			or an email (so far as I've seen).
+			or an email (so far as I've seen). I've seen cases where in one
+			conversation, a participant's actual name is given here, whereas in a
+			different conversation,
 phone_number:		(optional) A dict containing the participant's phone number and other
 			information about it. If this is present, 'fallback_name' should also be.
 

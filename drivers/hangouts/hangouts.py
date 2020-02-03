@@ -11,19 +11,24 @@ http://creativecommons.org/licenses/by-nc-sa/3.0/us/
 """
 import os
 import sys
+import json
 import time
 import logging
 import pathlib
 import argparse
 from datetime import datetime
 try:
-  from lifeapp.models import MessageEvent
+  from contacts import Contact, ContactBook
 except ImportError:
   root = pathlib.Path(__file__).resolve().parent.parent.parent
   sys.path.insert(0, str(root))
-  from lifeapp.models import MessageEvent
-from contacts import Contact
+  from contacts import Contact, ContactBook
 from drivers.utils import extract_data
+
+#TODO: Deal with participants leaving and joining hangouts chats.
+#      Membership can vary over time, but I think this is currently getting the static list of
+#      participants Hangouts gives in the metadata for each conversation. I think this really only
+#      comes up in actual group chats like the slurm group and the HacDC conversation.
 
 VERSION = '0.2.1'
 
@@ -41,83 +46,89 @@ METADATA = {
 }
 
 
-def get_events(path, contacts=None, **kwargs):
+def get_events(convos):
   # Implement the driver interface.
-  json_data = extract_data(path, 'Takeout/Hangouts/Hangouts.json', transform='json')
-  if json_data is None:
-    return
-  for convo in read_hangouts(json_data):
+  # This yields Python dicts, not JSON strings, so the caller has to do the json.dumps().
+  book = ContactBook()
+  emitted_contacts = set()
+  for convo in convos:
     for event in convo.events:
       recipients = []
       for participant in convo.participants:
         if participant.id != event.sender_id:
-          recipients.append(participant_to_contact(participant, contacts))
+          recipient = participant_to_contact(participant, book)
+          if recipient:
+            recipients.append(recipient)
       sender_participant = convo.participants.get_by_id(event.sender_id)
-      sender = participant_to_contact(sender_participant, contacts)
-      event = MessageEvent.create(
-        stream=event.type,
-        format='hangouts',
-        start=event.timestamp,
-        sender=sender,
-        recipients=recipients,
-        message=event.get_formatted_message(),
-        raw={'conversation':convo, 'event':event}
-      )
-      # Don't .save() here, so the caller can do a much faster bulk_create().
+      sender = participant_to_contact(sender_participant, book)
+      event = {
+        'stream': event.type,
+        'format': 'hangouts',
+        'start': event.timestamp,
+        'sender':sender.id,
+        'recipients':[recip.id for recip in recipients],
+        'message':event.get_formatted_message(),
+      }
+      #TODO: Yield contacts when they're updated with new info, too.
+      contacts_to_emit = [sender]+recipients
+      for contact in contacts_to_emit:
+        if contact.id not in emitted_contacts:
+          #TODO: Drastically simplify `Contact`s.
+          contact_dict = contact.to_dict()
+          contact_dict['stream'] = 'contact'
+          contact_dict['format'] = 'hangouts'
+          yield contact_dict
+          emitted_contacts.add(contact.id)
       yield event
 
 
-def participant_to_contact(participant, contacts=None):
+
+def participant_to_contact(participant, book):
   if participant is None:
-    return None
+    raise ValueError(f'No participant!')
   name = participant.name
   phone = Contact.normalize_phone(participant.phone)
   gaia_id = participant.gaia_id
-  if contacts is None:
+  # Check if the contact already exists.
+  # First, try looking it up by name:
+  name_results = book.getAll('name', name)
+  for result in name_results:
+    # If we found results, add the phone number and gaia_id.
+    if phone and not result['phones'].find(phone):
+      result['phones'].append(phone)
+    if gaia_id and not result.get('gaia_id') == gaia_id:
+      result['gaia_id'] = gaia_id
+      result['gaia_id'].indexable = True
+  # Then try looking up by phone number:
+  phone_results = book.getAll('phones', phone)
+  for result in phone_results:
+    # If we found results, add the name and gaia_id.
+    if name and not result.name:
+      result.name = name
+    if gaia_id and not result.get('gaia_id'):
+      result['gaia_id'] = gaia_id
+      result['gaia_id'].indexable = True
+  # Finally, try looking up by gaia_id:
+  gaia_results = book.getAll('gaia_id', gaia_id)
+  for result in gaia_results:
+    # If we found results, add the name and phone number.
+    if name and not result.name:
+      result.name = name
+    if phone and not result['phones'].find(phone):
+      result['phones'].append(phone)
+  # Return the first name result, first gaia result, first phone result, or if no hits,
+  # make and add a new Contact.
+  if name_results:
+    return name_results[0]
+  elif gaia_results:
+    return gaia_results[0]
+  elif phone_results:
+    return phone_results[0]
+  else:
     contact = Contact(name=name, phone=phone, gaia_id=gaia_id)
     contact['gaia_id'].indexable = True
+    book.add(contact)
     return contact
-  else:
-    # Check if the contact already exists.
-    # First, try looking it up by name:
-    name_results = contacts.getAll('name', name)
-    for result in name_results:
-      # If we found results, add the phone number and gaia_id.
-      if phone and not result['phones'].find(phone):
-        result['phones'].append(phone)
-      if gaia_id and not result.get('gaia_id') == gaia_id:
-        result['gaia_id'] = gaia_id
-        result['gaia_id'].indexable = True
-    # Then try looking up by phone number:
-    phone_results = contacts.getAll('phones', phone)
-    for result in phone_results:
-      # If we found results, add the name and gaia_id.
-      if name and not result.name:
-        result.name = name
-      if gaia_id and not result.get('gaia_id'):
-        result['gaia_id'] = gaia_id
-        result['gaia_id'].indexable = True
-    # Finally, try looking up by gaia_id:
-    gaia_results = contacts.getAll('gaia_id', gaia_id)
-    for result in gaia_results:
-      # If we found results, add the name and phone number.
-      if name and not result.name:
-        result.name = name
-      if phone and not result['phones'].find(phone):
-        result['phones'].append(phone)
-    # Return the first name result, first gaia result, first phone result, or if no hits,
-    # make and add a new Contact.
-    if name_results:
-      return name_results[0]
-    elif gaia_results:
-      return gaia_results[0]
-    elif phone_results:
-      return phone_results[0]
-    else:
-      contact = Contact(name=name, phone=phone, gaia_id=gaia_id)
-      contact['gaia_id'].indexable = True
-      contacts.add(contact)
-      return contact
 
 
 ##### Parsing code #####
@@ -316,7 +327,9 @@ def _extract_convo_data(convo):
     # note the initial timestamp of this conversation
     convo_id = convo["conversation_id"]["id"]
 
-    # find out the participants
+    # Find out the participants.
+    # Note: It seems sometimes not everyone is included. I've seen situations where the sender of
+    # a message isn't listed in the participant_data for the same conversation.
     participant_list = ParticipantList()
     for participant in convo["conversation_state"]["conversation"]["participant_data"]:
       gaia_id = participant["id"]["gaia_id"]
@@ -398,8 +411,12 @@ def _extract_convo_data(convo):
           pass  # may happen when there is no (compatible) attachment
       except KeyError:
         continue  # that's okay
-      event_obj = Event(event_id, sender_id["gaia_id"], timestamp, text, links=links,
-                        attachments=attachments, type=event_type)
+      sender_gaia = sender_id['gaia_id']
+      if not participant_list.get_by_id(sender_gaia):
+        participant_list.add(Participant(sender_gaia, None, None, None))
+      event_obj = Event(
+        event_id, sender_gaia, timestamp, text, links=links, attachments=attachments, type=event_type
+      )
       event_list.add(event_obj)
   except KeyError:
     raise RuntimeError("The conversation data could not be extracted.")
@@ -421,6 +438,9 @@ def make_argparser():
   parser.add_argument('logfile',
     help='filename of the Hangouts log file. Can be a raw or gzipped .json file, or a zip/tarball '
          'exported by Google.')
+  parser.add_argument('-j', '--json', dest='format', default='human', const='json',
+    action='store_const',
+    help='Print the output in the Driver API JSON format.')
   parser.add_argument('-S', '--no-sort', dest='sort', action='store_false', default=True)
   parser.add_argument('-l', '--list', action='store_true',
     help='Just print the list of conversations, not their full contents. Prints one line per '
@@ -469,6 +489,11 @@ def main(argv):
   json_data = extract_data(args.logfile, 'Takeout/Hangouts/Hangouts.json', transform='json')
   if json_data is None:
     return 1
+
+  if args.format == 'json':
+    for obj in get_events(read_hangouts(json_data)):
+      print(json.dumps(obj))
+    return
 
   all_convos = read_hangouts(json_data, convo_id=args.convo_id)
   if args.sort:
