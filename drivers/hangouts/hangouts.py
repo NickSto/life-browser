@@ -33,19 +33,6 @@ from drivers.utils import extract_data
 VERSION = '0.2.1'
 
 
-##### Driver interface #####
-
-METADATA = {
-  'human': {
-    'name': 'Google Hangouts',
-    'path': 'a .json, .json.gz, or a zip file or tarball directly from Google Takeout'
-  },
-  'format': {
-    'path_type': 'either',
-  }
-}
-
-
 def get_events(convos):
   # Implement the driver interface.
   # This yields Python dicts, not JSON strings, so the caller has to do the json.dumps().
@@ -80,7 +67,6 @@ def get_events(convos):
           yield contact_dict
           emitted_contacts.add(contact.id)
       yield event
-
 
 
 def participant_to_contact(participant, book):
