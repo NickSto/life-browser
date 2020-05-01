@@ -50,4 +50,7 @@ def extract_data(file_path, record_path, format=None, transform=None):
       contents = filehandle.read()
     if hasattr(filehandle, 'close') and not getattr(filehandle, 'closed', True):
       filehandle.close()
+  else:
+    if transform == 'json':
+      contents = json.loads(contents)
   return contents
