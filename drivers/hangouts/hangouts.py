@@ -30,7 +30,7 @@ from drivers.utils import extract_data
 #      participants Hangouts gives in the metadata for each conversation. I think this really only
 #      comes up in actual group chats like the slurm group and the HacDC conversation.
 
-VERSION = '0.2.1'
+VERSION = '0.2.2'
 
 
 def get_events(convos):
@@ -300,13 +300,23 @@ def read_hangouts(json_data, convo_id=None):
   """Parses the json file.
   A generator that yields conversations."""
   logging.info("Analyzing json file ...")
-  for convo in json_data["conversation_state"]:
-    convo = _extract_convo_data(convo)
+  if "conversation_state" in json_data:
+    jconvos = json_data["conversation_state"]
+  else:
+    jconvos = json_data["conversations"]
+  for meta_convo in jconvos:
+    if "conversation_state" in meta_convo:
+      jconvo = meta_convo["conversation_state"]
+      jevents = meta_convo["conversation_state"]["event"]
+    else:
+      jconvo = meta_convo["conversation"]
+      jevents = meta_convo["events"]
+    convo = _extract_convo_data(jconvo, jevents)
     if convo_id is None or convo.id == convo_id:
       yield convo
 
 
-def _extract_convo_data(convo):
+def _extract_convo_data(convo, events):
   """Extracts the data that belongs to a single conversation.
   @return Conversation object"""
   try:
@@ -317,7 +327,7 @@ def _extract_convo_data(convo):
     # Note: It seems sometimes not everyone is included. I've seen situations where the sender of
     # a message isn't listed in the participant_data for the same conversation.
     participant_list = ParticipantList()
-    for participant in convo["conversation_state"]["conversation"]["participant_data"]:
+    for participant in convo["conversation"]["participant_data"]:
       gaia_id = participant["id"]["gaia_id"]
       chat_id = participant["id"]["chat_id"]
       try:
@@ -334,7 +344,7 @@ def _extract_convo_data(convo):
 
     start_time = None
     end_time = None
-    for event in convo["conversation_state"]["event"]:
+    for event in events:
       event_id = event["event_id"]
       sender_id = event["sender_id"]  # has dict values "gaia_id" and "chat_id"
       # Process the timestamp.
@@ -382,8 +392,11 @@ def _extract_convo_data(convo):
           for attachment in message_content["attachment"]:
             # Note: This does not currently catch all attachments. It only gets Google photos
             # and videos (and even then, it doesn't get a url you can download the video from).
-            if attachment["embed_item"]["type"][0].lower() == "PLUS_PHOTO".lower():
-              media = attachment["embed_item"]["embeds.PlusPhoto.plus_photo"]
+            if attachment["embed_item"]["type"][0].upper() == "PLUS_PHOTO":
+              if "embeds.PlusPhoto.plus_photo" in attachment["embed_item"]:
+                media = attachment["embed_item"]["embeds.PlusPhoto.plus_photo"]
+              else:
+                media = attachment["embed_item"]["plus_photo"]
               if media['media_type'] == 'VIDEO':
                 # Video urls seem to lead to a series of redirects that won't work if you're not
                 # logged into Google.
