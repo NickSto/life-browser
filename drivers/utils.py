@@ -1,9 +1,14 @@
 import gzip
 import json
 import os
+import pathlib
+import subprocess
 import tarfile
+import yaml
 import zipfile
 
+
+DRIVERS_DIR = pathlib.Path(__file__).parent
 
 def extract_data(file_path, record_path, format=None, transform=None):
   """Read data from a file, understanding many formats (gzip, tarball, zip, or plaintext).
@@ -54,3 +59,63 @@ def extract_data(file_path, record_path, format=None, transform=None):
     if transform == 'json':
       contents = json.loads(contents)
   return contents
+
+
+def discover_drivers(drivers_root=DRIVERS_DIR):
+  drivers = {}
+  for config_path in find_driver_configs(drivers_root):
+    with config_path.open('r') as config_file:
+      driver = yaml.safe_load(config_file)
+    driver['dir'] = config_path.parent
+    name = driver['name']
+    drivers[name] = driver
+  return drivers
+
+
+def find_driver_configs(drivers_root):
+  for dirpath_str, dirname_strs, filename_strs in os.walk(drivers_root):
+    for filename_str in filename_strs:
+      if filename_str.lower() == 'driver.yaml':
+        yield pathlib.Path(dirpath_str, filename_str)
+
+
+def get_events(driver, path, contacts):
+  command = get_driver_command(driver, path)
+  process = subprocess.Popen(command, stdout=subprocess.PIPE, encoding='utf8')
+  for line in process.stdout:
+    json_object = json.loads(line)
+    if json_object['stream'] == 'contact':
+      contact = parse_contact(json_object)
+      # If the driver finds new info for a previously-seen Contact (like a new phone #), it will
+      # yield the same Contact again, but with the new info. Replace it with the new version, then.
+      if contacts.get_by_id(contact.id):
+        contacts.replace(contact.id, contact)
+      else:
+        contacts.add(contact)
+    else:
+      yield parse_event(json_object)
+
+
+def get_driver_command(driver, data_path):
+  exe_file = driver['execution']['exe']
+  executable = driver['dir'] / exe_file
+  args = driver['execution']['args']
+  command = [str(executable)] + args
+  substituted = False
+  for i, arg in enumerate(command):
+    if arg is None:
+      if substituted:
+        raise ValueError(
+          f"More than one '~' placeholder encountered in args for {driver['name']} driver."
+        )
+      command[i] = str(data_path)
+      substituted = True
+  return command
+
+
+def parse_event(json_event):
+  raise NotImplementedError("Haven't implemented parsing Events.")
+
+
+def parse_contact(json_event):
+  raise NotImplementedError("Haven't implemented parsing Contacts.")

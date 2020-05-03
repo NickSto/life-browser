@@ -2,7 +2,6 @@
 import re
 import os
 import sys
-import imp
 import time
 import errno
 import logging
@@ -19,14 +18,13 @@ EPILOG = """Info on data formats:
 """
 
 
-def make_argparser():
-  driver_names = discover_drivers()
+def make_argparser(drivers):
   parser = argparse.ArgumentParser(description=DESCRIPTION,
-                                   epilog=EPILOG+format_driver_info(driver_names),
+                                   epilog=EPILOG+format_driver_info(drivers),
                                    formatter_class=argparse.RawDescriptionHelpFormatter)
   parser.add_argument('-d', '--data', nargs=2, action='append', metavar=('FORMAT', 'PATH'),
     help='The input file/directory for a data source. Give two arguments: the format, and the path '
-         'to the data. The available formats are: "'+'", "'.join(driver_names)+'".')
+         'to the data. The available formats are: "'+'", "'.join(drivers.keys())+'".')
   parser.add_argument('-c', '--contacts', type=argparse.FileType('r'),
     help='Contacts file. At the moment, this only accepts the "Google CSV" format exported by '
          'Google Contacts.')
@@ -59,10 +57,16 @@ def make_argparser():
 
 def main(argv):
 
-  parser = make_argparser()
+  all_drivers = drivers.discover_drivers()
+  parser = make_argparser(all_drivers)
   args = parser.parse_args(argv[1:])
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
+
+  for format, path in args.data:
+    if format not in all_drivers:
+      parser.print_help()
+      fail(f'Driver for format {format!r} not found.')
 
   try:
     begin = int(args.begin)
@@ -84,15 +88,15 @@ def main(argv):
   events = []
   for format, path in args.data:
     # Load the driver.
-    driver = load_driver(format)
+    driver = all_drivers[format]
     # Check the path exists and looks right.
     path_type = 'file'
-    if hasattr(driver, 'METADATA') and 'format' in driver.METADATA:
-      path_type = driver.METADATA['format'].get('path_type', path_type)
+    if 'format' in driver and 'path_type' in driver['format']:
+      path_type = driver['format']['path_type']
     verify_path(path, type=path_type)
     # Read the data.
-    new_events = list(driver.get_events(path, contacts=contacts))
-    logging.info('Found {} events in {} data.'.format(len(new_events), driver.METADATA['human']['name']))
+    new_events = list(drivers.get_events(driver, path, contacts))
+    logging.info(f"Found {len(new_events)} events in {driver['name']} data.")
     events.extend(new_events)
 
   sorted_events = sorted(events, key=lambda event: event.start)
@@ -100,7 +104,7 @@ def main(argv):
 
   if not events:
     fail('Error: No events found! Make sure you provide at least one data source.')
-  logging.warning('Found {} events.'.format(len(events)))
+  logging.warning(f'Found {len(events)} events.')
 
   if args.print_contacts:
     print(contacts.formatted())
@@ -120,44 +124,23 @@ def main(argv):
     print(event)
 
 
-def discover_drivers():
-  driver_names = []
-  parent = drivers.__path__[0]
-  for candidate in os.listdir(parent):
-    if candidate == 'contacts':
-      continue
-    if os.path.isfile(os.path.join(parent, candidate, '__init__.py')):
-      driver_names.append(candidate)
-  return driver_names
-
-
-def format_driver_info(driver_names):
+def format_driver_info(drivers):
   descriptions = []
-  for driver_name in driver_names:
-    driver = load_driver(driver_name)
-    description = '"'+driver_name+'"'
-    if not hasattr(driver, 'METADATA') or 'human' not in driver.METADATA:
-      descriptions.append(description)
+  for name, driver in drivers.items():
+    if 'human' not in driver:
       continue
-    human_strings = driver.METADATA['human']
-    if 'name' in human_strings:
-      description += ' ({name})'.format(**human_strings)
-    if 'path' in human_strings:
-      description += ': Give {path}.'.format(**human_strings)
-    descriptions.append(description)
+    if 'name' in driver['human']:
+      human_name_str = f" ({driver['human']['name']})"
+    else:
+      human_name_str = ''
+    if 'path' in driver['human']:
+      path_str = f": Give {driver['human']['path']}."
+    else:
+      path_str = ''
+    if not (human_name_str or path_str):
+      continue
+    descriptions.append(f'{name!r}{human_name_str}{path_str}')
   return '\n'.join(descriptions)
-
-
-def load_driver(format):
-  try:
-    file, path, desc = imp.find_module(format, drivers.__path__)
-  except ImportError:
-    fail('Error: No driver found for format {!r}.'.format(format))
-  try:
-    return imp.load_module('drivers.'+format, file, path, desc)
-  finally:
-    if file is not None:
-      file.close()
 
 
 def human_time_to_timestamp(human_time):
