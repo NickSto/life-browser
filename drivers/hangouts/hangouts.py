@@ -37,6 +37,7 @@ def get_events(convos):
   # Implement the driver interface.
   # This yields Python dicts, not JSON strings, so the caller has to do the json.dumps().
   book = ContactBook()
+  book.indexable.add('gaia_ids')
   emitted_contacts = set()
   for convo in convos:
     for event in convo.events:
@@ -60,7 +61,6 @@ def get_events(convos):
       contacts_to_emit = [sender]+recipients
       for contact in contacts_to_emit:
         if contact.id not in emitted_contacts:
-          #TODO: Drastically simplify `Contact`s.
           contact_dict = contact.to_dict()
           contact_dict['stream'] = 'contact'
           contact_dict['format'] = 'hangouts'
@@ -77,31 +77,29 @@ def participant_to_contact(participant, book):
   gaia_id = participant.gaia_id
   # Check if the contact already exists.
   # First, try looking it up by name:
-  name_results = book.getAll('name', name)
+  name_results = book.get_all('names', name)
   for result in name_results:
     # If we found results, add the phone number and gaia_id.
-    if phone and not result['phones'].find(phone):
-      result['phones'].append(phone)
-    if gaia_id and not result.get('gaia_id') == gaia_id:
-      result['gaia_id'] = gaia_id
-      result['gaia_id'].indexable = True
+    if phone and phone not in result['phones']:
+      result['phones'].add(phone)
+    if gaia_id and gaia_id not in result['gaia_ids']:
+      result['gaia_ids'].add(gaia_id)
   # Then try looking up by phone number:
-  phone_results = book.getAll('phones', phone)
+  phone_results = book.get_all('phones', phone)
   for result in phone_results:
     # If we found results, add the name and gaia_id.
     if name and not result.name:
       result.name = name
-    if gaia_id and not result.get('gaia_id'):
-      result['gaia_id'] = gaia_id
-      result['gaia_id'].indexable = True
+    if gaia_id and gaia_id not in result['gaia_ids']:
+      result['gaia_ids'].add(gaia_id)
   # Finally, try looking up by gaia_id:
-  gaia_results = book.getAll('gaia_id', gaia_id)
+  gaia_results = book.get_all('gaia_ids', gaia_id)
   for result in gaia_results:
     # If we found results, add the name and phone number.
     if name and not result.name:
       result.name = name
-    if phone and not result['phones'].find(phone):
-      result['phones'].append(phone)
+    if phone and phone not in result['phones']:
+      result['phones'].add(phone)
   # Return the first name result, first gaia result, first phone result, or if no hits,
   # make and add a new Contact.
   if name_results:
@@ -112,7 +110,6 @@ def participant_to_contact(participant, book):
     return phone_results[0]
   else:
     contact = Contact(name=name, phone=phone, gaia_id=gaia_id)
-    contact['gaia_id'].indexable = True
     book.add(contact)
     return contact
 

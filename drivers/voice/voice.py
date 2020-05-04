@@ -54,10 +54,11 @@ def get_events(path, contacts=None, **kwargs):
   archive = Archive(path)
   mynumbers = archive.mynumbers
   if contacts:
-    mynumbers.extend(contacts.me['phones'].values)
+    mynumbers.extend(contacts.me['phones'].values())
   if not mynumbers:
-    logging.warning('No numbers of yours provided. May have problems identifying you in '
-                    'conversations.')
+    logging.warning(
+      'No numbers of yours provided. May have problems identifying you in conversations.'
+    )
   last_event = None
   for raw_record in archive:
     tree = html5lib.parse(raw_record.contents)
@@ -66,7 +67,7 @@ def get_events(path, contacts=None, **kwargs):
     if subtype is None:
       # It's a Text conversation.
       for message in convo:
-        kwargs = get_voice_event_args(message, contacts)
+        kwargs = get_voice_event_args(message)
         kwargs['raw']['conversation'] = convo
         event = VoiceMessageEvent(
           stream='sms',
@@ -82,7 +83,7 @@ def get_events(path, contacts=None, **kwargs):
       # It's a call.
       if subtype in ('placed', 'received', 'missed'):
         # It's a CallRecord of a Placed, Received, or Missed call.
-        kwargs = get_voice_event_args(convo, contacts)
+        kwargs = get_voice_event_args(convo)
         if convo.calltype == 'placed':
           kwargs['sender'] = contacts.me
           kwargs['recipients'] = [convert_contact(convo.contact, contacts)]
@@ -100,7 +101,7 @@ def get_events(path, contacts=None, **kwargs):
         # See the example of Google Voice - Voicemail - 2009-07-18T23_26_16Z.html
         #TODO: Use the `filename` attribute to find the mp3 of the audio
         #      (Note: it only gives the filename, not the full path).
-        kwargs = get_voice_event_args(convo, contacts)
+        kwargs = get_voice_event_args(convo)
         event = VoiceCallEvent(
           stream='call',
           subtype=subtype,
@@ -113,7 +114,7 @@ def get_events(path, contacts=None, **kwargs):
       last_event = event
 
 
-def get_voice_event_args(voice_record, contacts):
+def get_voice_event_args(voice_record):
   """Get the common set of constructor arguments for Voice Events."""
   kwargs = {
     'format': 'voice',
@@ -155,18 +156,18 @@ def convert_contact(voice_contact, contacts=None):
       if name != 'Me' and not contacts.me.name:
         contacts.me.name = name
       if phone not in contacts.me['phones']:
-        contacts.me['phones'].append(phone)
+        contacts.me['phones'].add(phone)
       return contacts.me
     else:
       # It's not me. Look up existing contacts by name and phone number.
       # First, name:
-      name_results = contacts.getAll('name', name)
+      name_results = contacts.get_all('names', name)
       for result in name_results:
         # If we found results, add the phone number.
-        if phone and not result['phones'].find(phone):
-          result['phones'].append(phone)
+        if phone and phone not in result['phones']:
+          result['phones'].add(phone)
       # Then the phone number:
-      phone_results = contacts.getAll('phones', phone)
+      phone_results = contacts.get_all('phones', phone)
       for result in phone_results:
         # If we found results, add the name.
         if name and not result.name:
