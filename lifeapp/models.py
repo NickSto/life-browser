@@ -10,13 +10,31 @@ except django.core.exceptions.ImproperlyConfigured as error:
 log = logging.getLogger(__name__)
 
 
+def parse_event(jevent, book):
+  stream = jevent['stream']
+  if stream == 'chat' or stream == 'sms':
+    sender = book.get_by_id(jevent['sender'])
+    recipients = []
+    for recipient_id in jevent['recipients']:
+      recipients.append(book.get_by_id(recipient_id))
+    return MessageEvent(
+      stream=jevent['stream'],
+      format=jevent['format'],
+      start=jevent['start'],
+      sender=sender,
+      recipients=recipients,
+      message=jevent['message']
+    )
+
+
 class Event(models.Model):
 
-  # stream: 'sms', 'call', 'chat', 'location', 'photo', etc
+  # The type of event ('sms', 'call', 'chat', 'location', 'photo', etc).
   stream = models.CharField(max_length=31, blank=False)
-  # format: 'hangouts', 'voice', 'mytracks', 'geotracker', etc
+  # The format it originated from ('hangouts', 'voice', 'mytracks', 'geotracker', etc).
   format = models.CharField(max_length=63, blank=False)
-  # unix timestamp of the event start
+  # Unix timestamp of the event start.
+  #TODO: Make a DateTimeField.
   start = models.BigIntegerField(null=False)
 
   class Meta:
@@ -103,13 +121,7 @@ class MessageEvent(Event):
     recipients_str = ', '.join(map(str, self.recipients[:4]))
     if len(self.recipients) > 4:
       recipients_str += ', and {} others'.format(len(self.recipients)-4)
-    return '{start}{type} {sender} -> {recipients}: {message}'.format(
-      start=time_str,
-      type=stream_str,
-      sender=self.sender,
-      recipients=recipients_str,
-      message=self.message
-    )
+    return f'{time_str}{stream_str} {self.sender} -> {recipients_str}: {self.message}'
 
   def __eq__(self, other):
     if not self._generic_eq(other):

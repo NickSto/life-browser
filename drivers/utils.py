@@ -1,3 +1,4 @@
+import contacts
 import gzip
 import json
 import os
@@ -6,6 +7,7 @@ import subprocess
 import tarfile
 import yaml
 import zipfile
+import lifeapp.models
 
 
 DRIVERS_DIR = pathlib.Path(__file__).parent
@@ -79,21 +81,21 @@ def find_driver_configs(drivers_root):
         yield pathlib.Path(dirpath_str, filename_str)
 
 
-def get_events(driver, path, contacts):
+def get_events(driver, path, book):
   command = get_driver_command(driver, path)
   process = subprocess.Popen(command, stdout=subprocess.PIPE, encoding='utf8')
   for line in process.stdout:
     json_object = json.loads(line)
     if json_object['stream'] == 'contact':
-      contact = parse_contact(json_object)
+      contact = contacts.Contact.from_dict(json_object)
       # If the driver finds new info for a previously-seen Contact (like a new phone #), it will
       # yield the same Contact again, but with the new info. Replace it with the new version, then.
-      if contacts.get_by_id(contact.id):
-        contacts.replace(contact.id, contact)
+      if book.get_by_id(contact.id):
+        book.replace(contact.id, contact)
       else:
-        contacts.add(contact)
+        book.add(contact)
     else:
-      yield parse_event(json_object)
+      yield lifeapp.models.parse_event(json_object, book)
 
 
 def get_driver_command(driver, data_path):
@@ -116,6 +118,3 @@ def get_driver_command(driver, data_path):
 def parse_event(json_event):
   raise NotImplementedError("Haven't implemented parsing Events.")
 
-
-def parse_contact(json_event):
-  raise NotImplementedError("Haven't implemented parsing Contacts.")
