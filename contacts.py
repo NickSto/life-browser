@@ -1,38 +1,47 @@
 import collections
 import re
 
-#TODO: Re-implement all the old features, but only ones that were actually used.
-#      Just try executing view.py and see where it breaks!
-
-# JSON representation of the structure of a Contact:
+# A Contact is a subclass of a dict, with keys like 'emails' or 'addresses'.
+# Each value is a ContactValues, which is also a dict subclass.
+# The keys of a ContactValues are the actual phone numbers, email addresses, etc.
+# Each value of a ContactValues is a ValueMetadata, yet another dict subclass.
+# It maps any number of metadata keys to values, but there are (so far) two standard ones:
+# `default` (bool), and `labels` (list of strings).
+# To summarize, here is the structure of a Contact, as if everything were a vanilla dict:
 # {
-#   "id": 11,
-#   "is_me": False,
-#   "values": {
-#     "names": {
-#       "Joe":{}
-#     },
-#     "phones": {
-#       "230942343": {"default":True, "labels":["Cell"]},
-#       "340035954": {"labels":["Work"]}
-#     },
-#     "emails": {
-#       "joe@cox.net": {"default":True, "labels":["Main","Home"]}
-#     }
+#   "names": {  # This dict is the equivalent of a ContactValues.
+#     "Joe": {"default":True, "labels":[]}       # ValueMetadata.
+#   },
+#   "phones": {
+#     "230942343": {"default":True, "labels":["Cell"]},
+#     "340035954": {"default":False, labels":["Work"]}
+#   },
+#   "emails": {
+#     "joe@cox.net": {"default":True, "labels":["Main","Home"]}
 #   }
 # }
+# Each Contact also has an `id` and `is_me` attribute, separate from its dict data.
 # API:
 # contact = Contact()
-# contact['phones'].add('230942343')
-# contact['phones']['230942343'].labels = ['Main']
+# contact['phones'].add('230942343', default=True)
+# contact['phones']['230942343'].labels.append('Main')
 
 
 class ContactBook:
 
   def __init__(self):
     self._contacts = {}
-    self.me = None
+    self._me = None
     self.indexable = {'names', 'phones', 'emails'}
+
+  @property
+  def me(self):
+    return self._me
+
+  @me.setter
+  def me(self, value):
+    self.add(value)
+    self._me = value
 
   @property
   def indexable(self):
@@ -50,12 +59,10 @@ class ContactBook:
   def add(self, contact):
     if contact.id is None:
       contact.id = self.get_new_id()
+    if contact.id in self._contacts:
+      return
     self._contacts[contact.id] = contact
     if contact.is_me:
-      if self.me:
-        raise ValueError(
-          f'Contact {contact} is_me is True, but there is already a "me" in this ContactBook.'
-        )
       self.me = contact
     self.index(contact)
 
@@ -105,6 +112,9 @@ class ContactBook:
     for key in self.indexable:
       for value in contact[key]:
         results = self._indices[key].setdefault(value, [])
+        for result in results:
+          if result.id == contact.id:
+            return
         results.append(contact)
 
 
@@ -170,7 +180,7 @@ class Contact(dict):
           return values.default
       return '???'
 
-  def to_dict(self):
+  def to_dict(self, **kwargs):
     data = {}
     for attr in self.ATTR_DEFAULTS:
       data[attr] = getattr(self, attr)
@@ -179,6 +189,7 @@ class Contact(dict):
       if values:
         all_values[key] = values.to_dict()
     data['values'] = all_values
+    data.update(kwargs)
     return data
 
   @classmethod
