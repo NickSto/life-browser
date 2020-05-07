@@ -22,6 +22,8 @@ def make_argparser():
     help='')
   parser.add_argument('-n', '--name',
     help='Find this person and print their whole contact info.')
+  parser.add_argument('-g', '--get', nargs=2, metavar=('KEY', 'VALUE'),
+    help='Find a person by contact info and print them.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   volume = parser.add_mutually_exclusive_group()
@@ -39,12 +41,23 @@ def main(argv):
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
 
-  for contact in get_contacts(args.contacts):
-    if args.name:
-      if contact.name and contact.name.lower() == args.name.lower():
-        print(contact.format())
-    else:
-      print(contact)
+  book = get_contacts(args.contacts)
+
+  if args.get:
+    key, value = args.get
+    if not key.endswith('s'):
+      logging.warning(f'Warning: --get keys must be plural. Saw: {key!r}')
+    if key == 'phones':
+      value = Contact.normalize_phone(value)
+    for contact in book.get_all(key, value):
+      print(contact.format())
+  else:
+    for contact in book:
+      if args.name:
+        if contact.name and contact.name.lower() == args.name.lower():
+          print(contact.format())
+      else:
+        print(contact)
 
 
 def get_contacts(csv_file):
