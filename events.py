@@ -15,53 +15,57 @@ def parse_event(event, book):
 
 class Event:
 
-  def __init__(self, stream, format, start, end=None):
+  def __init__(self, stream, format, start):
     # The type of event ('sms', 'call', 'chat', 'location', 'photo', etc).
     self.stream = stream
     # The format it originated from ('hangouts', 'voice', 'mytracks', 'geotracker', etc).
     self.format = format
     # Unix timestamp of the event start.
     self.start = start
-    self.end = end
 
-  def _generic_eq(self, other):
-    if not isinstance(other, Event):
+  def __eq__(self, other):
+    if type(self) != type(other):
       return False
     elif self.start != other.start:
-      return False
-    elif type(self) != type(other):
       return False
     elif self.stream != other.stream:
       return False
     elif self.format != other.format:
       return False
-    elif hasattr(self, 'end') and hasattr(other, 'end') and self.end != other.end:
+    else:
+      return True
+
+
+class CommunicationEvent(Event):
+  """Abstract parent class for any type of contact from one person to one or several others."""
+
+  def __init__(self, stream, format, start, sender, recipients):
+    super().__init__(stream, format, start)
+    self.sender = sender
+    self.recipients = recipients
+
+  def __eq__(self, other):
+    if not super().__eq__(other):
+      return False
+    #TODO: Is this test appropriate for Contacts? Verify that if the same event is parsed from two
+    #      different files, it'll end up with the same Contacts, after deduplication via ContactBook.
+    elif self.sender != other.sender:
+      return False
+    elif sorted(self.recipients) != sorted(other.recipients):
       return False
     else:
       return True
 
-  def __eq__(self, other):
-    if not self._generic_eq(other):
-      return False
-    if self.raw != other.raw:
-      return False
-    for attr in dir(self):
-      if attr.startswith('_'):
-        continue
-      if not hasattr(other, attr):
-        return False
-      if getattr(self, attr) != getattr(other, attr):
-        return False
-    return True
+  @staticmethod
+  def ids_to_contacts(ids, book):
+    return [book.get_by_id(id_) for id_ in ids]
 
 
-class MessageEvent(Event):
+class MessageEvent(CommunicationEvent):
   """Messages like SMS, chats, etc."""
 
   def __init__(self, stream, format, start, sender, recipients, message, echo=False):
-    super().__init__(stream, format, start)
-    self.sender = sender
-    self.recipients = recipients
+    super().__init__(stream, format, start, sender, recipients)
     self.message = message
     # If this is a message from myself to myself, it will show up twice.
     # `echo` should be True if this is the 2nd appearance of the message.
@@ -69,16 +73,12 @@ class MessageEvent(Event):
 
   @classmethod
   def from_dict(cls, data, book):
-    sender = book.get_by_id(data['sender'])
-    recipients = []
-    for recipient_id in data['recipients']:
-      recipients.append(book.get_by_id(recipient_id))
     event = cls(
       stream=data['stream'],
       format=data['format'],
       start=data['start'],
-      sender=sender,
-      recipients=recipients,
+      sender=book.get_by_id(data['sender']),
+      recipients=cls.ids_to_contacts(data['recipients'], book),
       message=data['message']
     )
     if 'echo' in data:
@@ -97,30 +97,24 @@ class MessageEvent(Event):
     return f'{time_str}{stream_str} {self.sender} -> {recipients_str}: {self.message}'
 
   def __eq__(self, other):
-    if not self._generic_eq(other):
+    if not super().__eq__(other):
       return False
-    if self.message != other.message:
+    elif self.message != other.message:
       return False
-    if self.echo != other.echo:
+    elif self.echo != other.echo:
       return False
-    #TODO: Is this test appropriate for Contacts? Verify that if the same event is parsed from two
-    #      different files, it'll end up with the same Contacts, after deduplication via ContactBook.
-    if self.sender != other.sender:
-      return False
-    if sorted(self.recipients) != sorted(other.recipients):
-      return False
-    return True
+    else:
+      return True
 
 
-class CallEvent(Event):
+class CallEvent(CommunicationEvent):
 
   """Phone calls, voicemails, video chats, etc."""
   def __init__(self, stream, format, start, end, subtype, sender, recipients):
-    super().__init__(stream, format, start, end=end)
+    super().__init__(stream, format, start, sender, recipients)
+    self.end = end
     # subtype examples: "received", "voicemail", "missed"
     self.subtype = subtype
-    self.sender = sender
-    self.recipients = recipients
 
   @property
   def duration(self):
@@ -141,33 +135,25 @@ class CallEvent(Event):
 
   @classmethod
   def from_dict(cls, data, book):
-    sender = book.get_by_id(data['sender'])
-    recipients = []
-    for recipient_id in data['recipients']:
-      recipients.append(book.get_by_id(recipient_id))
-    event = cls(
+    return cls(
       stream=data['stream'],
       format=data['format'],
       start=data['start'],
       end=data['end'],
       subtype=data['subtype'],
-      sender=sender,
-      recipients=recipients,
+      sender=book.get_by_id(data['sender']),
+      recipients=cls.ids_to_contacts(data['recipients'], book),
     )
-    return event
 
   def __eq__(self, other):
-    if not self._generic_eq(other):
+    if not super().__eq__(other):
       return False
-    if self.subtype != other.subtype:
+    elif self.end != other.end:
       return False
-    #TODO: Is this test appropriate for Contacts? Verify that if the same event is parsed from two
-    #      different files, it'll end up with the same Contacts, after deduplication via ContactBook.
-    if self.sender != other.sender:
+    elif self.subtype != other.subtype:
       return False
-    if sorted(self.recipients) != sorted(other.recipients):
-      return False
-    return True
+    else:
+      return True
 
 
 class LocationEvent(Event):
