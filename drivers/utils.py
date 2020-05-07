@@ -7,7 +7,7 @@ import subprocess
 import tarfile
 import yaml
 import zipfile
-import lifeapp.models
+import events
 
 
 DRIVERS_DIR = pathlib.Path(__file__).parent
@@ -95,7 +95,7 @@ def get_events(driver, path, book):
       else:
         book.add(contact)
     else:
-      yield lifeapp.models.parse_event(json_object, book)
+      yield events.parse_event(json_object, book)
 
 
 def get_driver_command(driver, data_path):
