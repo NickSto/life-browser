@@ -61,10 +61,7 @@ def get_events(convos):
       contacts_to_emit = [sender]+recipients
       for contact in contacts_to_emit:
         if contact.id not in emitted_contacts:
-          contact_dict = contact.to_dict()
-          contact_dict['stream'] = 'contact'
-          contact_dict['format'] = 'hangouts'
-          yield contact_dict
+          yield contact.to_dict(stream='contact', format='hangouts')
           emitted_contacts.add(contact.id)
       yield event
 
@@ -437,6 +434,8 @@ def make_argparser():
   parser.add_argument('-j', '--json', dest='format', default='human', const='json',
     action='store_const',
     help='Print the output in the Driver API JSON format.')
+  parser.add_argument('-J', '--json-array', action='store_true',
+    help='When using --json, add commas and brackets to make the entire output a JSON array.')
   parser.add_argument('-S', '--no-sort', dest='sort', action='store_false', default=True)
   parser.add_argument('-l', '--list', action='store_true',
     help='Just print the list of conversations, not their full contents. Prints one line per '
@@ -487,8 +486,17 @@ def main(argv):
     return 1
 
   if args.format == 'json':
+    if args.json_array:
+      print('[')
+    first = True
     for obj in get_events(read_hangouts(json_data)):
+      if first:
+        first = False
+      elif args.json_array:
+        print(',', end='')
       print(json.dumps(obj))
+    if args.json_array:
+      print(']')
     return
 
   all_convos = read_hangouts(json_data, convo_id=args.convo_id)
