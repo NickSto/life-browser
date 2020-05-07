@@ -267,9 +267,6 @@ class ContactValues(dict):
         return value
     return first_value
 
-  def __getitem__(self, index):
-    return list(self)[index]
-
   def add(self, value, default=False, label=None, labels=None):
     if label:
       if labels is not None:
