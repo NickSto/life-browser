@@ -2,12 +2,15 @@
 import argparse
 import csv
 import logging
+import pathlib
 import sys
 assert sys.version_info.major >= 3, 'Python 3 required'
 try:
   from contacts import ContactBook, Contact
 except ImportError:
-  pass
+  root = pathlib.Path(__file__).resolve().parent.parent.parent
+  sys.path.insert(0, str(root))
+  from contacts import ContactBook, Contact
 
 
 DESCRIPTION = """"""
@@ -18,7 +21,7 @@ def make_argparser():
   parser.add_argument('contacts', type=argparse.FileType('r'), default=sys.stdin, nargs='?',
     help='')
   parser.add_argument('-n', '--name',
-    help='Print the whole contact info for this person.')
+    help='Find this person and print their whole contact info.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   volume = parser.add_mutually_exclusive_group()
@@ -36,8 +39,12 @@ def main(argv):
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
 
-  for row in read_csv(args.contacts):
-    print(row['Name'])
+  for contact in get_contacts(args.contacts):
+    if args.name:
+      if contact.name and contact.name.lower() == args.name.lower():
+        print(contact.format())
+    else:
+      print(contact)
 
 
 def get_contacts(csv_file):
@@ -52,7 +59,7 @@ def get_contacts(csv_file):
     elif row.get('Organization 1 - Name'):
       contact.name = row['Organization 1 - Name']
     # Phone numbers
-    parse_values(row, contact, 'phones', 'Phone', Contact.normalize_phone)
+    parse_values(row, contact, 'phones', 'Phone', converter=Contact.normalize_phone)
     # Emails
     parse_values(row, contact, 'emails', 'E-mail')
     # Addresses
@@ -72,13 +79,13 @@ def get_contacts(csv_file):
 
 def parse_values(row, contact, key, name, value_label='Value', converter=None):
   i = 1
-  while row.get(f'{name} {i} - {value_label}'):
-    label = row[f'{name} {i} - Type']
+  while row.get(f'{name} {i} - Type') or row.get(f'{name} {i} - {value_label}'):
+    label = row.get(f'{name} {i} - Type', '')
     if not label.strip():
       label = None
-    for value in split_values(row.get(f'{name} {i} - Value')):
+    for value in split_values(row.get(f'{name} {i} - {value_label}')):
       if converter:
-        value = converter(converter)
+        value = converter(value)
       contact[key].add(value, label=label)
     i += 1
 
