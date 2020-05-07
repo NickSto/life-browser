@@ -10,24 +10,23 @@ except django.core.exceptions.ImproperlyConfigured as error:
 log = logging.getLogger(__name__)
 
 
-def parse_event(jevent, book):
-  stream = jevent['stream']
+def parse_event(event, book):
+  stream = event['stream']
   if stream == 'chat' or stream == 'sms':
-    sender = book.get_by_id(jevent['sender'])
-    recipients = []
-    for recipient_id in jevent['recipients']:
-      recipients.append(book.get_by_id(recipient_id))
-    return MessageEvent(
-      stream=jevent['stream'],
-      format=jevent['format'],
-      start=jevent['start'],
-      sender=sender,
-      recipients=recipients,
-      message=jevent['message']
-    )
+    return MessageEvent.from_dict(event, book)
+  elif stream == 'call':
+    return CallEvent.from_dict(event, book)
+  else:
+    raise NotImplementedError(f'Cannot parse {stream!r} streams.')
 
 
 class Event(models.Model):
+
+  def __init__(self, stream, format, start, end=None):
+    self.stream = stream
+    self.format = format
+    self.start = start
+    self.end = end
 
   # The type of event ('sms', 'call', 'chat', 'location', 'photo', etc).
   stream = models.CharField(max_length=31, blank=False)
@@ -86,6 +85,13 @@ class Event(models.Model):
 class MessageEvent(Event):
   """Messages like SMS, chats, etc."""
 
+  def __init__(self, stream, format, start, sender, recipients, message, echo=False):
+    super().__init__(stream, format, start)
+    self.sender = sender
+    self.recipients = recipients
+    self.message = message
+    self.echo = echo
+
   #TODO: sender = models.ForeignKey(Contact, on_delete=models.SET_NULL)
   sender = models.CharField(max_length=127, blank=False)
   # A null-delimited string of recipient names. This is a very temporary kludge just to get this up
@@ -111,6 +117,24 @@ class MessageEvent(Event):
   @recipients.setter
   def recipients(self, values):
     self._recipients = '\x00'.join([str(value) for value in values])
+
+  @classmethod
+  def from_dict(cls, data, book):
+    sender = book.get_by_id(data['sender'])
+    recipients = []
+    for recipient_id in data['recipients']:
+      recipients.append(book.get_by_id(recipient_id))
+    event = cls(
+      stream=data['stream'],
+      format=data['format'],
+      start=data['start'],
+      sender=sender,
+      recipients=recipients,
+      message=data['message']
+    )
+    if 'echo' in data:
+      event.echo = data['echo']
+    return event
 
   def __str__(self):
     time_str = datetime.fromtimestamp(self.start).strftime('%H:%M:%S')
@@ -139,27 +163,48 @@ class MessageEvent(Event):
     return True
 
 
-class CallEvent(object):
+class CallEvent(Event):
   """Phone calls, voicemails, video chats, etc."""
-  def __init__(self, stream, format, start, end, subtype, sender, recipients, raw=None):
-    super().__init__(stream, format, start, end=end, raw=raw)
+  def __init__(self, stream, format, start, end, subtype, sender, recipients):
+    super().__init__(stream, format, start, end=end)
+    # subtype examples: "received", "voicemail", "missed"
     self.subtype = subtype
     self.sender = sender
     self.recipients = recipients
+
+  @property
+  def duration(self):
+    return self.end-self.start
 
   def __str__(self):
     if self.subtype == 'missed':
       duration_str = ''
     else:
-      duration_str = ' for '+format_time(self.end-self.start)
-    return '{start} {type} {subtype}: {sender} -> {recipients}{duration}'.format(
-      start=datetime.fromtimestamp(self.start).strftime('%H:%M:%S'),
-      type=self.stream.capitalize(),
-      subtype=self.subtype.lower(),
-      sender=self.sender,
-      recipients=', '.join(map(str, self.recipients)),
-      duration=duration_str
+      duration_str = ' for '+format_time(self.duration)
+    recipients_str = ', '.join(map(str, self.recipients[:4]))
+    if len(self.recipients) > 4:
+      recipients_str += ', and {} others'.format(len(self.recipients)-4)
+    return (
+      f'{self.start} {self.stream.capitalize()} {self.subtype.lower()}: {self.sender} -> '
+      f'{recipients_str}{duration_str}'
     )
+
+  @classmethod
+  def from_dict(cls, data, book):
+    sender = book.get_by_id(data['sender'])
+    recipients = []
+    for recipient_id in data['recipients']:
+      recipients.append(book.get_by_id(recipient_id))
+    event = cls(
+      stream=data['stream'],
+      format=data['format'],
+      start=data['start'],
+      end=data['end'],
+      subtype=data['subtype'],
+      sender=sender,
+      recipients=recipients,
+    )
+    return event
 
   def __eq__(self, other):
     if not self._generic_eq(other):
