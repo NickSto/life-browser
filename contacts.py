@@ -235,11 +235,17 @@ class Contact(dict):
     leading plus, if any."""
     if raw_phone is None:
       return None
+    # Remove any non-digit characters.
     normalized_phone = re.sub(r'[^0-9]', '', raw_phone)
     if raw_phone.startswith('+'):
       return '+'+normalized_phone
     else:
-      return normalized_phone
+      if len(normalized_phone) == 10:
+        # Assume 10-digit numbers without a country code are North American.
+        #TODO: Internationalize.
+        return '+1'+normalized_phone
+      else:
+        return normalized_phone
 
 
 class ContactValues(dict):
