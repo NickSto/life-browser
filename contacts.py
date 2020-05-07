@@ -54,7 +54,12 @@ class ContactBook:
     self._indexable = keys
     self.reindex()
 
-  #TODO: Make into iterable.
+  def __iter__(self):
+    items = self._contacts.items()
+    def iterator():
+      for id_, contact in items:
+        yield contact
+    return iterator()
 
   def add(self, contact):
     if contact.id is None:
@@ -180,6 +185,27 @@ class Contact(dict):
           return values.default
       return '???'
 
+  def format(self):
+    """Return a human-readable string of all data in the Contact."""
+    first_line = str(self)
+    if self.is_me:
+      first_line += ' (me)'
+    data_lines = []
+    for key, values in self.items():
+      if key == 'names' and len(values) == 1:
+        continue
+      if values:
+        if key == 'addresses':
+          value_strs = [', '.join(value.splitlines()) for value in values]
+          values_str = '; '.join(value_strs)
+        else:
+          values_str = ', '.join(map(str, values))
+        data_lines.append(f'  {key}: {values_str}')
+    if data_lines:
+      return first_line+':\n'+'\n'.join(data_lines)
+    else:
+      return first_line
+
   def to_dict(self, **kwargs):
     data = {}
     for attr in self.ATTR_DEFAULTS:
@@ -234,6 +260,9 @@ class ContactValues(dict):
       if meta.default:
         return value
     return first_value
+
+  def __getitem__(self, index):
+    return list(self)[index]
 
   def add(self, value, default=False, label=None, labels=None):
     if label:
