@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import unicode_literals
 import os
 import sys
 import json
@@ -14,7 +10,6 @@ import zipfile
 import tarfile
 import argparse
 import html5lib
-from datetime import datetime
 try:
   from drivers.voice.gvoiceParser import gvParserLib
 except ImportError:
@@ -25,19 +20,9 @@ except ImportError:
   root = pathlib.Path(__file__).resolve().parent.parent.parent
   sys.path.insert(0, str(root))
   from contacts import Contact, ContactBook
-from lifeapp.models import CallEvent, MessageEvent
-from drivers.utils import extract_data
 
 
 ##### Driver interface #####
-
-
-class VoiceMessageEvent(MessageEvent):
-  pass
-
-
-class VoiceCallEvent(CallEvent):
-  pass
 
 
 def get_events(path, book=None, **kwargs):
@@ -66,7 +51,6 @@ def get_events(path, book=None, **kwargs):
       # It's a Text conversation.
       for message in convo:
         event = get_base_dict(message)
-        # event = VoiceMessageEvent(
         sender = convert_contact(message.contact, book)
         recipients = [convert_contact(c, book) for c in message.recipients]
         event['stream'] = 'sms'
@@ -83,7 +67,6 @@ def get_events(path, book=None, **kwargs):
         else:
           sender = convert_contact(convo.contact, book)
           recipients = [me]
-        # event = VoiceCallEvent(
         event['stream'] = 'call'
         event['subtype'] = subtype
       else:
@@ -93,7 +76,6 @@ def get_events(path, book=None, **kwargs):
         #TODO: Use the `filename` attribute to find the mp3 of the audio
         #      (Note: it only gives the filename, not the full path).
         event = get_base_dict(convo)
-        # event = VoiceCallEvent(
         event['stream'] = 'call'
         event['subtype'] = subtype
         sender = convert_contact(convo.contact, book)
