@@ -45,6 +45,8 @@ class ContactBook:
     self.add(value)
     self._me = value
 
+  # Indexing
+
   @property
   def indexable(self):
     return self._indexable
@@ -80,6 +82,28 @@ class ContactBook:
     self._index_policy = value
     self.reindex()
 
+  def reindex(self):
+    self._indices = collections.defaultdict(dict)
+    for contact in self._contacts.values():
+      self.index(contact)
+
+  def index(self, contact):
+    for key in contact.keys():
+      if self.index_policy == 'none':
+        continue
+      elif self.index_policy == 'whitelist' and key not in self.indexable:
+        continue
+      elif self.index_policy == 'blacklist' and key in self.unindexable:
+        continue
+      for value in contact[key]:
+        results = self._indices[key].setdefault(value, [])
+        for result in results:
+          if result.id == contact.id:
+            return
+        results.append(contact)
+
+  # /Indexing
+
   def __iter__(self):
     items = self._contacts.items()
     def iterator():
@@ -99,6 +123,12 @@ class ContactBook:
 
   def replace(self, cid, contact):
     self._contacts[cid] = contact
+
+  def get_new_id(self):
+    i = len(self._contacts)
+    while i in self._contacts:
+      i += 1
+    return i
 
   def get_by_id(self, cid):
     try:
@@ -130,32 +160,6 @@ class ContactBook:
         del results[i]
     # Return a copy, not the original, so the user can't modify the index.
     return results.copy()
-
-  def get_new_id(self):
-    i = len(self._contacts)
-    while i in self._contacts:
-      i += 1
-    return i
-
-  def reindex(self):
-    self._indices = collections.defaultdict(dict)
-    for contact in self._contacts.values():
-      self.index(contact)
-
-  def index(self, contact):
-    for key in contact.keys():
-      if self.index_policy == 'none':
-        continue
-      elif self.index_policy == 'whitelist' and key not in self.indexable:
-        continue
-      elif self.index_policy == 'blacklist' and key in self.unindexable:
-        continue
-      for value in contact[key]:
-        results = self._indices[key].setdefault(value, [])
-        for result in results:
-          if result.id == contact.id:
-            return
-        results.append(contact)
 
   def merge(self, other_book):
     """Update this ContactBook with data from another.
