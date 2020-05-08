@@ -7,6 +7,7 @@ import errno
 import logging
 import argparse
 from datetime import datetime
+#TODO: Move code to run the drivers into "driverslib" module.
 import drivers
 import drivers.contacts
 from contacts import ContactBook, Contact
@@ -95,7 +96,9 @@ def main(argv):
       path_type = driver['format']['path_type']
     verify_path(path, type=path_type)
     # Read the data.
-    new_events = list(drivers.get_events(driver, path, contacts))
+    local_book = ContactBook()
+    new_events = list(drivers.get_events(driver, path, local_book))
+    contacts.merge(local_book)
     logging.info(f"Found {len(new_events)} events in {driver['name']} data.")
     events.extend(new_events)
 
