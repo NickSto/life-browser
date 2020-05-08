@@ -96,9 +96,7 @@ def main(argv):
       path_type = driver['format']['path_type']
     verify_path(path, type=path_type)
     # Read the data.
-    local_book = ContactBook()
-    new_events = list(drivers.get_events(driver, path, local_book))
-    contacts.merge(local_book)
+    new_events = list(drivers.get_events(driver, path, contacts))
     logging.info(f"Found {len(new_events)} events in {driver['name']} data.")
     events.extend(new_events)
 
@@ -110,7 +108,8 @@ def main(argv):
   logging.warning(f'Found {len(events)} events.')
 
   if args.print_contacts:
-    print(contacts.formatted())
+    for contact in contacts:
+      print(contact.format())
     return
 
   current_day_stamp = None

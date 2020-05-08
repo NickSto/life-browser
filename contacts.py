@@ -161,17 +161,39 @@ class ContactBook:
     # Return a copy, not the original, so the user can't modify the index.
     return results.copy()
 
+  def find_match(self, contact):
+    try:
+      return list(self.find_matches(contact))[0]
+    except IndexError:
+      return None
+
+  def find_matches(self, other_contact):
+    for key, values in other_contact.items():
+      for value in values:
+        for contact in self.get_all(key, value):
+          yield contact
+
+  def replace_and_update(self, contact):
+    """Replace a `Contact` with any matching version in this book, and update the book version.
+    If there was a match, this updates the match with any new data in the input `Contact`, then
+    returns the match.
+    If there's no match, this just returns the input `Contact`."""
+    match = self.find_match(contact)
+    if match:
+      match.merge(contact)
+      return match
+    else:
+      return contact
+
   def merge(self, other_book):
     """Update this ContactBook with data from another.
     When the two conflict, choose the existing data in this book."""
     #TODO: Decide what to do with self.me and other_contact.is_me
     for other_contact in other_book:
       hit = False
-      for key, values in other_contact.items():
-        for value in values:
-          for contact in self.get_all(key, value):
-            hit = True
-            contact.merge(other_contact)
+      for contact in self.find_matches(other_contact):
+        hit = True
+        contact.merge(other_contact)
       if not hit:
         #TODO: Only add a copy; don't alter the original Contact.
         other_contact.id = None

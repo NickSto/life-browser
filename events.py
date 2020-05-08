@@ -23,6 +23,14 @@ class Event:
     # Unix timestamp of the event start.
     self.start = start
 
+  def update_contacts(self, book):
+    """Incorporate data from a `ContactBook` into the `Contact`s associated with this `Event`.
+    If any `Contact` has a match in the `ContactBook`, replace it with the one in the book and
+    add its data to the book version.
+    This version is a stub.
+    It's just here so that child objects can rely on their parent having this method."""
+    pass
+
   def __eq__(self, other):
     if type(self) != type(other):
       return False
@@ -55,6 +63,11 @@ class CommunicationEvent(Event):
       return False
     else:
       return True
+
+  def update_contacts(self, book):
+    super().update_contacts(book)
+    self.sender = book.replace_and_update(self.sender)
+    self.recipients = [book.replace_and_update(recipient) for recipient in self.recipients]
 
   @staticmethod
   def ids_to_contacts(ids, book):
@@ -121,6 +134,7 @@ class CallEvent(CommunicationEvent):
     return self.end-self.start
 
   def __str__(self):
+    time_str = datetime.fromtimestamp(self.start).strftime('%H:%M:%S')
     if self.subtype == 'missed':
       duration_str = ''
     else:
@@ -129,7 +143,7 @@ class CallEvent(CommunicationEvent):
     if len(self.recipients) > 4:
       recipients_str += ', and {} others'.format(len(self.recipients)-4)
     return (
-      f'{self.start} {self.stream.capitalize()} {self.subtype.lower()}: {self.sender} -> '
+      f'{time_str} {self.stream.capitalize()} {self.subtype.lower()}: {self.sender} -> '
       f'{recipients_str}{duration_str}'
     )
 

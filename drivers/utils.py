@@ -1,4 +1,3 @@
-import contacts
 import gzip
 import json
 import os
@@ -8,6 +7,7 @@ import tarfile
 import yaml
 import zipfile
 import events
+import contacts
 
 
 DRIVERS_DIR = pathlib.Path(__file__).parent
@@ -82,20 +82,42 @@ def find_driver_configs(drivers_root):
 
 
 def get_events(driver, path, book):
-  command = get_driver_command(driver, path)
-  process = subprocess.Popen(command, stdout=subprocess.PIPE, encoding='utf8')
-  for line in process.stdout:
-    json_object = json.loads(line)
-    if json_object['stream'] == 'contact':
-      contact = contacts.Contact.from_dict(json_object)
+  """Execute a driver on input data and return `Event`s.
+  This will use the `book` argument to harmonize the `Contact`s associated with the `Event`s with
+  all the `Contact`s known to this point."""
+  # Use list() to force rehydrate_objects() to finish before we start.
+  # This will cause all the Contacts to be in their final form - no more modifications.
+  for event in list(rehydrate_objects(run_driver(driver, path))):
+    event.update_contacts(book)
+    yield event
+
+
+def rehydrate_objects(raw_objects):
+  """Transform the raw dicts from a driver into `Event`s and `Contact`s.
+  The `Contact` `id`s will only be local `id`s valid for this execution. This will not translate
+  them into globally valid `id`s."""
+  book = contacts.ContactBook(index_policy='blacklist', unindexable=('notes', 'addresses'))
+  for raw_object in raw_objects:
+    if raw_object['stream'] == 'contact':
+      contact = contacts.Contact.from_dict(raw_object)
       # If the driver finds new info for a previously-seen Contact (like a new phone #), it will
-      # yield the same Contact again, but with the new info. Replace it with the new version, then.
-      if book.get_by_id(contact.id):
-        book.replace(contact.id, contact)
+      # yield the same Contact again, with the same id, but with the new info.
+      # Update the old version with the new info.
+      # Don't just replace it in the book, since the old object will still be referenced by an event.
+      existing_contact = book.get_by_id(contact.id)
+      if existing_contact:
+        existing_contact.merge(contact)
       else:
         book.add(contact)
     else:
-      yield events.parse_event(json_object, book)
+      yield events.parse_event(raw_object, book)
+
+
+def run_driver(driver, path):
+  command = get_driver_command(driver, path)
+  process = subprocess.Popen(command, stdout=subprocess.PIPE, encoding='utf8')
+  for line in process.stdout:
+    yield json.loads(line)
 
 
 def get_driver_command(driver, data_path):
