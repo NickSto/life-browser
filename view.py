@@ -175,12 +175,21 @@ def parse_aliases(aliases_str, contacts):
 
 
 def parse_mynumbers(mynumbers_str, contacts):
-  if not mynumbers_str:
+  if mynumbers_str is None:
     return
-  for number in mynumbers_str.split(','):
-    phone = Contact.normalize_phone(number)
+  mynumbers = [Contact.normalize_phone(number) for number in mynumbers_str.split(',')]
+  if contacts.me is None:
+    for phone in mynumbers:
+      result = contacts.get('phones', phone)
+      if result:
+        result.is_me = True
+        contacts.me = result
+        break
+  if contacts.me is None:
+    return
+  for phone in mynumbers:
     if phone not in contacts.me['phones']:
-      contacts.me['phones'].append(phone)
+      contacts.me['phones'].add(phone)
 
 
 def verify_path(path, type='file'):
