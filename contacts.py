@@ -29,10 +29,12 @@ import re
 
 class ContactBook:
 
-  def __init__(self):
+  def __init__(self, index_policy='blacklist', unindexable=('notes', 'addresses'), indexable=()):
     self._contacts = {}
     self._me = None
-    self.indexable = {'names', 'phones', 'emails'}
+    self.index_policy = index_policy
+    self.indexable = indexable
+    self.unindexable = unindexable
 
   @property
   def me(self):
@@ -49,9 +51,33 @@ class ContactBook:
 
   @indexable.setter
   def indexable(self, keys):
-    if not isinstance(keys, set):
-      return TypeError(f'ContactBook.indexable must be a set. Received {type(keys)} instead.')
-    self._indexable = keys
+    if isinstance(keys, set) or isinstance(keys, tuple):
+      self._indexable = set(keys)
+    else:
+      return TypeError(f'ContactBook.indexable must be a set/tuple. Received {type(keys)} instead.')
+    self.reindex()
+
+  @property
+  def unindexable(self):
+    return self._unindexable
+
+  @unindexable.setter
+  def unindexable(self, keys):
+    if isinstance(keys, set) or isinstance(keys, tuple):
+      self._unindexable = set(keys)
+    else:
+      return TypeError(f'ContactBook.indexable must be a set/tuple. Received {type(keys)} instead.')
+    self.reindex()
+
+  @property
+  def index_policy(self):
+    return self._index_policy
+
+  @index_policy.setter
+  def index_policy(self, value):
+    if value not in ('all', 'blacklist', 'whitelist', 'none'):
+      raise ValueError(f'Invalid value for index_policy: {value!r}')
+    self._index_policy = value
     self.reindex()
 
   def __iter__(self):
@@ -75,7 +101,10 @@ class ContactBook:
     self._contacts[cid] = contact
 
   def get_by_id(self, cid):
-    return self._contacts[cid]
+    try:
+      return self._contacts[cid]
+    except KeyError:
+      return None
 
   def get(self, key, value):
     try:
@@ -114,7 +143,13 @@ class ContactBook:
       self.index(contact)
 
   def index(self, contact):
-    for key in self.indexable:
+    for key in contact.keys():
+      if self.index_policy == 'none':
+        continue
+      elif self.index_policy == 'whitelist' and key not in self.indexable:
+        continue
+      elif self.index_policy == 'blacklist' and key in self.unindexable:
+        continue
       for value in contact[key]:
         results = self._indices[key].setdefault(value, [])
         for result in results:
@@ -122,12 +157,30 @@ class ContactBook:
             return
         results.append(contact)
 
+  def merge(self, other_book):
+    """Update this ContactBook with data from another.
+    When the two conflict, choose the existing data in this book."""
+    #TODO: Decide what to do with self.me and other_contact.is_me
+    for other_contact in other_book:
+      hit = False
+      for key, values in other_contact.items():
+        for value in values:
+          for contact in self.get_all(key, value):
+            hit = True
+            contact.merge(other_contact)
+      if not hit:
+        #TODO: Only add a copy; don't alter the original Contact.
+        other_contact.id = None
+        self.add(other_contact)
+
 
 class Contact(dict):
 
   ATTR_DEFAULTS = {'id': None, 'is_me': False}
 
   def __init__(self, **kwargs):
+    #TODO: Move 'id' out of this class entirely?
+    #      Should probably be something only ContactBook deals with.
     for attr, default in self.ATTR_DEFAULTS.items():
       setattr(self, attr, default)
     for key, value in kwargs.items():
@@ -247,6 +300,18 @@ class Contact(dict):
       else:
         return normalized_phone
 
+  def merge(self, other):
+    """Update this Contact with data from another.
+    When the two conflict, choose the existing data in this Contact."""
+    #TODO: Make this only add copies of the ContactValues and ValuesMetadatas!
+    for key, values in other.items():
+      for value, meta in values.items():
+        if value not in self[key]:
+          if meta.default:
+            if any([m.default for m in self[key].values()]):
+              meta.default = False
+          self[key][value] = meta
+
 
 class ContactValues(dict):
 
@@ -268,6 +333,7 @@ class ContactValues(dict):
     return first_value
 
   def add(self, value, default=False, label=None, labels=None):
+    #TODO: If default is True, make sure only one value is the default.
     if label:
       if labels is not None:
         raise ValueError(f'Cannot give both label and labels.')
