@@ -5,7 +5,9 @@ https://bitbucket.org/dotcs/hangouts-log-reader/
 
 See life-tests.ipynb for investigations and codification of assumptions.
 
+Analysis
 =============
+
 An analysis of the structure of the takeout JSON file.
 So far, this is based only on examining the first conversation in the 2014-10-04 dump.
 
@@ -14,93 +16,99 @@ timestamps: They use timestamps accurate to the microsecond, so divide by 1,000,
 conversation_id: The value of this key is always a dict with 1 key, 'id', which maps to a unique-looking string. It's present at many different levels, but is the same id within the same conversation (e.g. every element in data['conversation_state'][0] will always have the id 'UgwWD8oGsubG9LWd0x94AaABAQ').
 
 
-Top level
----------
-- a dict containing 2 keys:
-continuation_end_timestamp:	timestamp of the last conversation?
-conversation_state:		the list of conversations?
+root
+----
+A dict containing 2 keys:
+  continuation_end_timestamp:	str: timestamp of the last conversation?
+  conversation_state:		list: the list of conversations?
 
-conversation_state
-------------------
-- a list, each element containing 3 keys:
-conversation_id:	a dict mapping 'id' to the convo id
-response_header:	a dict of header info
-conversation_state:	a dict with the conversation data
+root['conversation_state']
+--------------------------
+A list, each element containing 3 keys:
+  conversation_id:	dict: one key, 'id', maps to the convo id (str)
+  conversation_state:	dict: the conversation data
+Optional:
+  response_header:	dict: header info
 
-conversation_state
-------------------
-- a dict, containing 3 keys:
-conversation_id:	a dict mapping 'id' to the convo id (the same one as its parent)
-conversation:		a dict containing metadata about a conversation
+root['conversation_state'][0]['conversation_state']
+---------------------------------------------------
+A dict containing 3 keys:
+  conversation_id:	dict: maps 'id' to the convo id (the same one as its parent)
+  conversation:		dict: contains metadata about a conversation
 			- It looks like a "conversation" is usually all the messages sent between a
 			  unique set of participants. I've only once seen two conversations with the
 			  same set of participants (in the same file).
-event:			a list of the actual messages
+  event:		list: the actual messages
+Optional:
+  event_continuation_token
 
-conversation
-------------
-- a dict, containing 12 keys:
-id
-type:			a string telling whether it's a group chat? Values I've observed:
+root['conversation_state'][0]['conversation_state']['conversation']
+-------------------------------------------------------------------
+A dict containing 13 keys:
+  id
+  type:			str: telling whether it's a group chat? Values I've observed:
 			- STICKY_ONE_TO_ONE: By far the most common. A "normal" conversation?
 			  All the ones I've seen so far only have 2 participants.
 			- GROUP: A group chat? The only one I've seen had 5 participants.
-current_participant
-force_history_state
-fork_on_external_invite
-has_active_hangout
-network_type
-otr_status
-otr_toggle
-read_state
-self_conversation_state
-participant_data:	A list where each element seems to hold the data on one of the participants
+  current_participant
+  force_history_state
+  fork_on_external_invite
+  has_active_hangout
+  network_type
+  otr_status
+  otr_toggle
+  read_state
+  self_conversation_state
+  participant_data:	list: each element seems to hold the data on one of the participants
 			in the conversation.
 			Note: for some reason, it seems the list sometimes does not include all the
 			actual participants. I've seen cases where the person identified as the
 			sender of one of the messages isn't included in the list (as identified by
 			the `sender_id` of the chat `event`s, trying to match it to participant
 			`gaia_id`s).
+Optional(?):
+  group_link_sharing_status
 
-participant_data
-----------------
-- a list, each element containing 4-6 keys:
-id:			a dict holding the 'gaia_id' and 'chat_id', two numeric strings which are
+root['conversation_state'][0]['conversation_state']['conversation']['participant_data']
+---------------------------------------------------------------------------------------
+A list, each element containing 4-6 keys:
+  id:			dict: holds the 'gaia_id' and 'chat_id', two numeric strings which are
 			identical in all cases I've seen.
 			- Looks like you might be able to query public APIs to look up things like
 			  real names from a gaia_id:
 			  https://stackoverflow.com/questions/27028322/how-to-look-up-user-information-from-google-gaia-id
-participant_type
-new_invitation_status
-invitation_status
-fallback_name:		(optional) A name for the participant. Could be a real name, a phone number,
+  participant_type
+  new_invitation_status
+  invitation_status
+Optional:
+  fallback_name:	str: A name for the participant. Could be a real name, a phone number,
 			or an email (so far as I've seen). I've seen cases where in one
 			conversation, a participant's actual name is given here, whereas in a
 			different conversation,
-phone_number:		(optional) A dict containing the participant's phone number and other
-			information about it. If this is present, 'fallback_name' should also be.
+  phone_number:		dict: contains the participant's phone number and other information
+			about it. If this is present, 'fallback_name' should also be.
 
-event (element of the second 'conversation_state')
------
-- a list, each element containing 10 keys:
-conversation_id:	a dict mapping 'id' to the convo id (the same one as its parent)
-sender_id:		a dict with two types of id's presumably identifying the sender:
+root['conversation_state'][0]['conversation_state']['event']
+------------------------------------------------------------
+A list, each element containing 10 keys:
+  conversation_id:	dict: maps 'id' to the convo id (the same one as its parent)
+  sender_id:		dict: has two types of id's presumably identifying the sender:
 			'gaia_id' and 'chat_id', both of which are the same value so far.
 			- I haven't found any better way to identify the sender than this opaque
 			  token, if it's a REGULAR_CHAT_MESSAGE.
-timestamp:		a string with the timestamp
-self_event_state:	a dict with the keys 'user_id' (whose value is in the same format
+  timestamp:		str: the timestamp
+  self_event_state:	dict: has the keys 'user_id' (whose value is in the same format
 			as 'sender_id') and 'notification_level', and sometimes
 			'client_generated_id'
-event_id:		a string of the event id
-advances_sort_timestamp:	a boolean
-event_otr:		a string, e.g. 'ON_THE_RECORD'
-delivery_medium:	a dict with the phone number and whether it was Google Voice:
-			medium_type:	a string, e.g. 'GOOGLE_VOICE_MEDIUM'
-			- This seems to be the best way to determine if it's actually an SMS.
-			  'BABEL_MEDIUM' seems to reliably be a Hangouts chat.
-			self_phone:	a dict mapping 'e164' to the phone number
-event_type:		a string identifying the type of event. Values I've observed:
+  event_id:		str: the event id
+  advances_sort_timestamp:	bool
+  event_otr:		str: e.g. 'ON_THE_RECORD'
+  delivery_medium:	dict: has the phone number and whether it was Google Voice:
+			  medium_type:	a string, e.g. 'GOOGLE_VOICE_MEDIUM'
+			  - This seems to be the best way to determine if it's actually an SMS.
+			    'BABEL_MEDIUM' seems to reliably be a Hangouts chat.
+			  self_phone:	a dict mapping 'e164' to the phone number
+  event_type:		str: identies the type of event. Values I've observed:
 			- REGULAR_CHAT_MESSAGE: A regular Hangouts chat (a gchat)?
 			  However, I've found several of these labeled GOOGLE_VOICE_MEDIUM,
 			  which certainly seem like SMS messages.
@@ -108,54 +116,56 @@ event_type:		a string identifying the type of event. Values I've observed:
 			- VOICEMAIL: A Google Voice voicemail. Where you normally find the chat
 			  message text, you'll find the transcription.
 			- HANGOUT_EVENT: An audio or video call? No message text.
-chat_message:		a dict with the actual message!
+  chat_message:		dict: has the actual message!
 
-chat_message
-------------
-- a dict, containing 1 key:
-message_content:	a dict with the actual message!
+root['conversation_state'][0]['conversation_state']['event'][0]['chat_message']
+-------------------------------------------------------------------------------
+A dict containing 1 key:
+  message_content:	dict: has the actual message!
 
-message_content
----------------
-- a dict, containing 1 or 2 keys:
-attachment:		(optional)
-segment:		a list of parts of the message
+root['conversation_state'][0]['conversation_state']['event'][0]['chat_message']['message_content']
+--------------------------------------------------------------------------------------------------
+A dict containing 1 or 2 keys:
+  segment:		list: the parts of the message
 			- This is actually optional, too, if the message is just an attachment.
+Optional:
+  attachment
 
-segment
--------
-- a list, each element containing 2 or 3 keys:
-  - each segment seems to be part of a single chat or text message, broken up in some
-    arbitrary-seeming way.
-type:			a string. Values I've seen:
+root['conversation_state'][0]['conversation_state']['event'][0]['chat_message']['message_content']['segment']
+--------------------------------------------------------------------------------------------------
+A list, each element containing 2 or 3 keys:
+- each segment seems to be part of a single chat or text message, broken up in some
+  arbitrary-seeming way.
+  type:			str: Values I've seen:
 			- TEXT: A regular chat message.
 			- LINE_BREAK: What it says on the tin. It seems then either the 'text' will
 			  be '\n', or there won't be any 'text' element.
 			- LINK: The 'text' be a url, and there will be a 'link_data'.
-formatting:		(optional) a dict of the visual formatting for the text in this segment.
+  text:			str: the actual message!
+			- This may be omitted, e.g. for 'type's of 'LINE_BREAK'
+Optional:
+  formatting:		dict: the visual formatting for the text in this segment.
 			Contains 4 keys, each of which holds a boolean value:
 			'bold', 'italics', 'strikethrough', 'underline'
-link_data:		(optional) if the 'type' is 'LINK', this will be present. It will be a dict
+  link_data:		if the 'type' is 'LINK', this will be present. It will be a dict
 			containing a key 'link_target', and sometimes, 'display_url'.
-text:			a string that's the actual message!
-			- This may be omitted, e.g. for 'type's of 'LINE_BREAK'
 
-attachment
-----------
-- a list, each element a dict of 1 key (so far):
-embed_item:		The attachment(?)
+root['conversation_state'][0]['conversation_state']['event'][0]['chat_message']['message_content']['attachment']
+--------------------------------------------------------------------------------------------------
+A list, each element a dict of 1 key (so far):
+  embed_item:		The attachment(?)
 
-embed_item
-----------
-- a dict
-type:			a list of strings
+root['conversation_state'][0]['conversation_state']['event'][0]['chat_message']['message_content']['attachment'][0]['embed_item']
+--------------------------------------------------------------------------------------------------
+A dict
+  type:			list: of strings
 			observed string values:
 			- PLUS_PHOTO: An image
 			- PLUS_AUDIO_V2: A Google Voice voicemail?
 			- PLACE_V2: A location?
 			- THING_V2: Additional data for PLACE_V2?
 			- THING: Same as above?
-[embed type str]:	the key [embed type str] will be one of the following observed strings:
+  [embed type]:		str: the key [embed type] will be one of the following observed strings:
 			- PlusPhoto.plus_photo
 			- embeds.PlusPhoto.plus_photo
 			- embeds.PlusAudioV2.plus_audio_v2
@@ -163,33 +173,170 @@ type:			a list of strings
 			- embeds.GeoCoordinatesV2.geo_coordinates_v2
 			- embeds.ThingV2.thing_v2
 
-[embed type str]
-----------------
-- a dict
-thumbnail:		a dict
-owner_obfuscated_id
-album_id
-photo_id
-url:			The url of the actual photo (in the case of PLUS_PHOTOs).
+root['conversation_state'][0]['conversation_state']['event'][0]['chat_message']['message_content']['attachment'][0]['embed_item'][embed type]
+--------------------------------------------------------------------------------------------------
+A dict
+  thumbnail:		dict
+  owner_obfuscated_id
+  album_id
+  photo_id
+  url:			The url of the actual photo (in the case of PLUS_PHOTOs).
 			For PLUS_AUDIO_V2, this isn't a useful url.
 			For "VIDEO" media_types, this is just the thumbnail
-original_content_url
-media_type:		a string. observed values:
+  original_content_url
+  media_type:		str: observed values:
 			- PHOTO
 			- ANIMATED_PHOTO
 			- VIDEO
-stream_id
-owner_obfuscated_id
-embed_url
-duration
-media_key
+  stream_id
+  owner_obfuscated_id
+  embed_url
+  duration
+  media_key
 
-thumbnail
----------
-- a dict
-url:			For videos, this is a link to the video. But not a direct link.
+root['conversation_state'][0]['conversation_state']['event'][0]['chat_message']['message_content']['attachment'][0]['embed_item'][embed_type]['thumbnail']
+--------------------------------------------------------------------------------------------------
+A dict
+  url:			For videos, this is a link to the video. But not a direct link.
 			It seems to lead to an html page which will load the video, but only if
 			you're logged in :(
-height px
-width px
-image_url
+  height px
+  width px
+  image_url
+
+
+Version 2
+==========
+The dump I got on 2020-04-28 no longer has the same structure described above.
+The 2018-01-30 dump worked with the existing driver, so I assume the change happened sometime
+between those two dates.
+
+Here's the major changes I've found so far:
+rename key
+- old: root['conversation_state']
+- new: root['conversations']
+rename key
+- old: root['conversation_state'][0]['conversation_state']
+- new: root['conversations'][0]['conversation']
+rename and move key
+- old: root['conversation_state'][0]['conversation_state']['event']
+- new: root['conversations'][0]['events']
+
+Also, they're now including all media attachments in the exported tarball.
+- great, but it makes the exports enormous.
+  - I removed them and put them in ~/aa/Pix/messages
+- the filenames seem to be the same as the basenames of the 'url' in the attachment dict
+
+Here's the analysis of the 2020-04-28 data:
+
+root
+----
+A dict containing one key:
+  conversations
+
+root['conversations']
+---------------------
+A list, each containing two keys:
+  conversation
+  events
+
+root['conversations'][0]['conversation']
+----------------------------------------
+A dict containing two keys:
+  conversation_id
+  conversation
+
+root['conversations'][0]['conversation']['conversation_id']
+-----------------------------------------------------------
+A dict containing one key:
+  id			A string containing what I assume is the conversation identifier.
+
+root['conversations'][0]['conversation']['conversation']
+--------------------------------------------------------
+A dict containing 13-14 keys:
+  current_participant
+  force_history_state
+  fork_on_external_invite
+  group_link_sharing_status
+  has_active_hangout
+  id
+  network_type
+  otr_status
+  otr_toggle
+  participant_data
+  read_state
+  self_conversation_state
+  type
+Optional:
+  name
+
+root['conversations'][0]['conversation']['conversation']['participant_data']
+----------------------------------------------------------------------------
+A list, each containing 6-8 keys:
+  id
+  invitation_status
+  domain_id
+  participant_type
+  new_invitation_status
+  in_different_customer_as_requester
+Optional:
+  fallback_name
+  phone_number
+
+root['conversations'][0]['events']
+----------------------------------
+A list, each containing 11 keys:
+  advances_sort_timestamp
+  conversation_id
+  delivery_medium
+  event_id
+  event_otr
+  event_type
+  event_version
+  self_event_state
+  sender_id
+  timestamp
+And one of:
+  chat_message
+  hangout_event
+  membership_change
+  conversation_rename
+
+root['conversations'][0]['events'][0]['chat_message']
+-----------------------------------------------------
+A dict with 1-2 keys:
+  message_content
+Optional:
+  annotation
+
+root['conversations'][0]['events'][0]['chat_message']['message_content']
+------------------------------------------------------------------------
+A dict with 1-2 keys - one or both of these:
+  segment
+  attachment
+
+root['conversations'][0]['events'][0]['chat_message']['message_content']['attachment']
+--------------------------------------------------------------------------------------
+A list with 2 keys:
+  id
+  embed_item
+
+root['conversations'][0]['events'][0]['chat_message']['message_content']['attachment'][0]['embed_item']
+-----------------------------------------------------------------------------------------
+A dict:
+- I really don't know what's up with this one.
+- Here's all the combinations I've seen so far:
+  - type, plus_audio_v2
+  - type, plus_audio_v2, id
+  - type, plus_photo
+  - type, plus_photo, id
+  - type, place_v2, thing_v2, id
+- Here's a set of things that are true as far as I've observed, but may not always hold:
+  type
+Optional:
+  id
+And one or more of:
+  plus_audio_v2
+  plus_photo
+  place_v2
+  thing_v2
