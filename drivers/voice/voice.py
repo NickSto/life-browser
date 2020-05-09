@@ -1,63 +1,47 @@
 #!/usr/bin/env python3
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import unicode_literals
 import os
 import sys
+import json
 import time
 import errno
 import logging
+import pathlib
 import zipfile
 import tarfile
 import argparse
 import html5lib
-from datetime import datetime
 try:
   from drivers.voice.gvoiceParser import gvParserLib
 except ImportError:
   from gvoiceParser import gvParserLib
 try:
-  from events import CallEvent, MessageEvent
-  from contacts import Contact
+  from contacts import Contact, ContactBook
 except ImportError:
-  class MessageEvent(object):
-    pass
-  class CallEvent(object):
-    pass
+  root = pathlib.Path(__file__).resolve().parent.parent.parent
+  sys.path.insert(0, str(root))
+  from contacts import Contact, ContactBook
 
 
 ##### Driver interface #####
 
-METADATA = {
-  'human': {
-    'name': 'Google Voice',
-    'path': 'a zip file or tarball directly from Google Takeout, or an extracted directory of '
-            'Voice data'
-  },
-  'format': {
-    'path_type': 'either',
-  }
-}
 
-
-class VoiceMessageEvent(MessageEvent):
-  pass
-
-
-class VoiceCallEvent(CallEvent):
-  pass
-
-
-def get_events(path, contacts=None, **kwargs):
+def get_events(path, book=None, **kwargs):
   # Implement the driver interface.
+  if book is None:
+    book = ContactBook()
   archive = Archive(path)
   mynumbers = archive.mynumbers
-  if contacts:
-    mynumbers.extend(contacts.me['phones'].values)
+  me = Contact(is_me=True, name='Me')
+  if book.me:
+    me = book.me
+    mynumbers.extend(me['phones'].keys())
+  else:
+    book.me = me
   if not mynumbers:
-    logging.warning('No numbers of yours provided. May have problems identifying you in '
-                    'conversations.')
+    logging.warning(
+      'No numbers of yours provided. May have problems identifying you in conversations.'
+    )
+  emitted_contacts = set()
   last_event = None
   for raw_record in archive:
     tree = html5lib.parse(raw_record.contents)
@@ -66,78 +50,73 @@ def get_events(path, contacts=None, **kwargs):
     if subtype is None:
       # It's a Text conversation.
       for message in convo:
-        kwargs = get_voice_event_args(message, contacts)
-        kwargs['raw']['conversation'] = convo
-        event = VoiceMessageEvent(
-          stream='sms',
-          sender=convert_contact(message.contact, contacts),
-          recipients=[convert_contact(c, contacts) for c in message.recipients],
-          message=message.text,
-          **kwargs
-        )
-        event.echo = is_echo(event, last_event)
-        yield event
-        last_event = event
+        event = get_base_dict(message)
+        sender = convert_contact(message.contact, book)
+        recipients = [convert_contact(c, book) for c in message.recipients]
+        event['stream'] = 'sms'
+        event['message'] = message.text
+        event['echo'] = is_echo(event, last_event, sender, recipients)
     else:
       # It's a call.
       if subtype in ('placed', 'received', 'missed'):
         # It's a CallRecord of a Placed, Received, or Missed call.
-        kwargs = get_voice_event_args(convo, contacts)
+        event = get_base_dict(convo)
         if convo.calltype == 'placed':
-          kwargs['sender'] = contacts.me
-          kwargs['recipients'] = [convert_contact(convo.contact, contacts)]
+          sender = me
+          recipients = [convert_contact(convo.contact, book)]
         else:
-          kwargs['sender'] = convert_contact(convo.contact, contacts)
-          kwargs['recipients'] = [contacts.me]
-        event = VoiceCallEvent(
-          stream='call',
-          subtype=subtype,
-          **kwargs
-        )
+          sender = convert_contact(convo.contact, book)
+          recipients = [me]
+        event['stream'] = 'call'
+        event['subtype'] = subtype
       else:
         # It's an AudioRecord of a Voicemail or Recorded call.
         # Well, actually sometimes Voicemails are CallRecords, somehow. So they won't have a filename.
         # See the example of Google Voice - Voicemail - 2009-07-18T23_26_16Z.html
         #TODO: Use the `filename` attribute to find the mp3 of the audio
         #      (Note: it only gives the filename, not the full path).
-        kwargs = get_voice_event_args(convo, contacts)
-        event = VoiceCallEvent(
-          stream='call',
-          subtype=subtype,
-          sender=convert_contact(convo.contact, contacts),
-          recipients=[contacts.me],
-          **kwargs
-        )
-      event.echo = is_echo(event, last_event)
-      yield event
-      last_event = event
+        event = get_base_dict(convo)
+        event['stream'] = 'call'
+        event['subtype'] = subtype
+        sender = convert_contact(convo.contact, book)
+        recipients = [me]
+      event['echo'] = is_echo(event, last_event, sender, recipients)
+    for contact in [sender]+recipients:
+      if contact.id not in emitted_contacts:
+        yield contact.to_dict(stream='contact', format='hangouts')
+        emitted_contacts.add(contact.id)
+    event['sender'] = sender.id
+    event['recipients'] = [recip.id for recip in recipients]
+    yield event
+    last_event = event
+    if book and book.me:
+      me = book.me
 
 
-def get_voice_event_args(voice_record, contacts):
+def get_base_dict(voice_record):
   """Get the common set of constructor arguments for Voice Events."""
-  kwargs = {
+  data = {
     'format': 'voice',
     #TODO: Check timezone awareness.
     'start': int(time.mktime(voice_record.date.timetuple())),
-    'raw': {'event': voice_record}
   }
   if hasattr(voice_record, 'duration'):
     if voice_record.duration is None:
-      kwargs['end'] = kwargs['start']
+      data['end'] = data['start']
     else:
-      kwargs['end'] = int(time.mktime((voice_record.date+voice_record.duration).timetuple()))
-  return kwargs
+      data['end'] = int(time.mktime((voice_record.date+voice_record.duration).timetuple()))
+  return data
 
 
-def is_echo(event, last_event):
+def is_echo(event, last_event, sender, recipients):
   # Is this the 2nd appearance of a text or call from myself to myself?
   if event == last_event:
-    if event.sender.is_me and any([recipient.is_me for recipient in event.recipients]):
+    if sender.is_me and any([recipient.is_me for recipient in recipients]):
       return True
   return False
 
 
-def convert_contact(voice_contact, contacts=None):
+def convert_contact(voice_contact, book=None):
   #TODO: I think we're often getting phone numbers in the name field.
   #TODO: We're still ending up with duplicate contacts. When I include the 2018-06-06 Google
   #      Contacts export, plus all Hangouts and Voice exports (Hangouts: 2x 2018-01-30,
@@ -146,40 +125,43 @@ def convert_contact(voice_contact, contacts=None):
   #      just her first name and her number with the country code but no plus.
   name = voice_contact.name
   phone = Contact.normalize_phone(voice_contact.phonenumber)
-  if contacts is None:
+  if book is None:
     return Contact(is_me=voice_contact.is_me, name=name, phone=phone)
+  # Check if the contact already exists.
+  # It's not me. Look up existing contacts by name and phone number.
+  # First, if it's "me", and there's already a "me", use that.
+  me_result = None
+  if voice_contact.is_me and book.me:
+    me_result = book.me
+    if name != 'Me' and not book.me.name:
+      book.me.name = name
+    if phone not in book.me['phones']:
+      book.me['phones'].add(phone)
+  # Then, look it up by name:
+  name_results = book.get_all('names', name)
+  for result in name_results:
+    # If we found results, add the phone number.
+    if phone and phone not in result['phones']:
+      result['phones'].add(phone)
+  # Then the phone number:
+  phone_results = book.get_all('phones', phone)
+  for result in phone_results:
+    # If we found results, add the name.
+    if name and not result.name:
+      result.name = name
+  # Return the first name result, first phone result, or if no hits, make and add a new Contact.
+  if me_result:
+    contact = me_result
+  elif name_results:
+    contact = name_results[0]
+  elif phone_results:
+    contact = phone_results[0]
   else:
-    # Check if the contact already exists.
-    if voice_contact.is_me:
-      # It's me. Add any new data.
-      if name != 'Me' and not contacts.me.name:
-        contacts.me.name = name
-      if phone not in contacts.me['phones']:
-        contacts.me['phones'].append(phone)
-      return contacts.me
-    else:
-      # It's not me. Look up existing contacts by name and phone number.
-      # First, name:
-      name_results = contacts.getAll('name', name)
-      for result in name_results:
-        # If we found results, add the phone number.
-        if phone and not result['phones'].find(phone):
-          result['phones'].append(phone)
-      # Then the phone number:
-      phone_results = contacts.getAll('phones', phone)
-      for result in phone_results:
-        # If we found results, add the name.
-        if name and not result.name:
-          result.name = name
-      # Return the first name result, first phone result, or if no hits, make and add a new Contact.
-      if name_results:
-        return name_results[0]
-      elif phone_results:
-        return phone_results[0]
-      else:
-        contact = Contact(is_me=False, name=name, phone=phone)
-        contacts.add(contact)
-        return contact
+    contact = Contact(is_me=voice_contact.is_me, name=name, phone=phone)
+  if contact.is_me:
+    book.me = contact
+  book.add(contact)
+  return contact
 
 
 ##### Stand-alone part #####
@@ -335,6 +317,7 @@ def make_argparser():
   parser = argparse.ArgumentParser(description=DESCRIPTION)
   parser.add_argument('record', metavar='record.html',
     help='')
+  parser.add_argument('-j', '--json', action='store_true')
   parser.add_argument('-m', '--mynumbers',
     help='Comma-delimited.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
@@ -352,6 +335,11 @@ def main(argv):
   args = parser.parse_args(argv[1:])
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
+
+  if args.json:
+    for event in get_events(args.record):
+      print(json.dumps(event))
+    return
 
   if args.mynumbers is None:
     mynumbers = []
