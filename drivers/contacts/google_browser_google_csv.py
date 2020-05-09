@@ -2,12 +2,15 @@
 import argparse
 import csv
 import logging
+import pathlib
 import sys
 assert sys.version_info.major >= 3, 'Python 3 required'
 try:
-  from contacts import ContactBook, Contact, ContactValues, ContactValue
+  from contacts import ContactBook, Contact
 except ImportError:
-  pass
+  root = pathlib.Path(__file__).resolve().parent.parent.parent
+  sys.path.insert(0, str(root))
+  from contacts import ContactBook, Contact
 
 
 DESCRIPTION = """"""
@@ -18,7 +21,9 @@ def make_argparser():
   parser.add_argument('contacts', type=argparse.FileType('r'), default=sys.stdin, nargs='?',
     help='')
   parser.add_argument('-n', '--name',
-    help='Print the whole contact info for this person.')
+    help='Find this person and print their whole contact info.')
+  parser.add_argument('-g', '--get', nargs=2, metavar=('KEY', 'VALUE'),
+    help='Find a person by contact info and print them.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   volume = parser.add_mutually_exclusive_group()
@@ -36,13 +41,28 @@ def main(argv):
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
 
-  for row in read_csv(args.contacts):
-    print(row['Name'])
+  book = get_contacts(args.contacts)
+
+  if args.get:
+    key, value = args.get
+    if not key.endswith('s'):
+      logging.warning(f'Warning: --get keys must be plural. Saw: {key!r}')
+    if key == 'phones':
+      value = Contact.normalize_phone(value)
+    for contact in book.get_all(key, value):
+      print(contact.format())
+  else:
+    for contact in book:
+      if args.name:
+        if contact.name and contact.name.lower() == args.name.lower():
+          print(contact.format())
+      else:
+        print(contact)
 
 
 def get_contacts(csv_file):
   #TODO: Allow adding to existing ContactBook.
-  contacts = ContactBook()
+  book = ContactBook()
   #TODO: Some special handling for phone numbers, emails, addresses to put the preferred one first.
   for row in read_csv(csv_file):
     contact = Contact()
@@ -52,48 +72,35 @@ def get_contacts(csv_file):
     elif row.get('Organization 1 - Name'):
       contact.name = row['Organization 1 - Name']
     # Phone numbers
-    i = 1
-    while row.get('Phone {} - Value'.format(i)):
-      type = row['Phone {} - Type'.format(i)]
-      for value in split_values(row.get('Phone {} - Value'.format(i))):
-        value = Contact.normalize_phone(value)
-        contact_value = ContactValue(value=value, attributes={'type':type})
-        contact['phones'].append(contact_value)
-      i += 1
+    parse_values(row, contact, 'phones', 'Phone', converter=Contact.normalize_phone)
     # Emails
-    i = 1
-    while row.get('E-mail {} - Value'.format(i)):
-      type = row['E-mail {} - Type'.format(i)]
-      for value in split_values(row.get('E-mail {} - Value'.format(i))):
-        contact_value = ContactValue(value=value, attributes={'type':type})
-        contact['emails'].append(contact_value)
-      i += 1
+    parse_values(row, contact, 'emails', 'E-mail')
     # Addresses
-    i = 1
-    while row.get('Address {} - Formatted'.format(i)):
-      if 'addresses' not in contact:
-        contact['addresses'] = ContactValues(contact=contact, key='addresses')
-      type = row['Address {} - Type'.format(i)]
-      for value in split_values(row.get('Address {} - Formatted'.format(i))):
-        contact_value = ContactValue(value=value, attributes={'type':type})
-        contact['addresses'].append(contact_value)
-      i += 1
+    parse_values(row, contact, 'addresses', 'Address', value_label='Formatted')
     # Organization
-    if row.get('Organization 1 - Name'):
-      contact['organization'] = row['Organization 1 - Name']
+    parse_values(row, contact, 'organizations', 'Organization', value_label='Name')
     # Relationship
-    if row.get('Relationship 1 - Value') or row.get('Relationship 1 - Type'):
-      type = row.get('Relationship 1 - Type')
-      value = row.get('Relationship 1 - Value') or type
-      contact_value = ContactValue(contact=contact, key='relationship', value=value)
-      if type:
-        contact_value.attributes['type'] = type
-      contact['relationship'] = contact_value
+    # Note: There are instances where there's no Type, but there is a Value.
+    # But currently no instances where there's a Value but no Type.
+    parse_values(row, contact, 'relations', 'Relation')
     # Note
     if row.get('Note'):
-      contact['note'] = row['Notes']
-    contacts.add(contact)
-  return contacts
+      contact['notes'].add(row['Notes'])
+    book.add(contact)
+  return book
+
+
+def parse_values(row, contact, key, name, value_label='Value', converter=None):
+  i = 1
+  while row.get(f'{name} {i} - Type') or row.get(f'{name} {i} - {value_label}'):
+    label = row.get(f'{name} {i} - Type', '')
+    if not label.strip():
+      label = None
+    for value in split_values(row.get(f'{name} {i} - {value_label}')):
+      if converter:
+        value = converter(value)
+      contact[key].add(value, label=label)
+    i += 1
 
 
 def read_csv(csv_file):

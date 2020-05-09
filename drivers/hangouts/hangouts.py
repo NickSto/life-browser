@@ -9,126 +9,106 @@ provide a link to the source: https://bitbucket.org/dotcs/hangouts-log-reader/
 You can read the full license here:
 http://creativecommons.org/licenses/by-nc-sa/3.0/us/
 """
-
 import os
 import sys
+import json
 import time
 import logging
 import pathlib
 import argparse
 from datetime import datetime
 try:
-  from events import MessageEvent
+  from contacts import Contact, ContactBook
 except ImportError:
   root = pathlib.Path(__file__).resolve().parent.parent.parent
   sys.path.insert(0, str(root))
-  from events import MessageEvent
-from contacts import Contact
+  from contacts import Contact, ContactBook
 from drivers.utils import extract_data
 
-VERSION = '0.2.1'
+#TODO: Deal with participants leaving and joining hangouts chats.
+#      Membership can vary over time, but I think this is currently getting the static list of
+#      participants Hangouts gives in the metadata for each conversation. I think this really only
+#      comes up in actual group chats like the slurm group and the HacDC conversation.
+
+VERSION = '0.2.2'
 
 
-##### Driver interface #####
-
-METADATA = {
-  'human': {
-    'name': 'Google Hangouts',
-    'path': 'a .json, .json.gz, or a zip file or tarball directly from Google Takeout'
-  },
-  'format': {
-    'path_type': 'either',
-  }
-}
-
-
-class HangoutsEvent(MessageEvent):
-  def __init__(self, stream, format, start, subtype, sender, recipients, message, raw):
-    super().__init__(stream, format, start, sender, recipients, message, raw=raw)
-    self.subtype = subtype
-
-  def __eq__(self, other):
-    return super().__eq__(other)
-    if self.subtype != other.subtype:
-      return False
-
-
-def get_events(path, contacts=None, **kwargs):
+def get_events(convos):
   # Implement the driver interface.
-  json_data = extract_data(path, 'Takeout/Hangouts/Hangouts.json', transform='json')
-  if json_data is None:
-    return
-  for convo in read_hangouts(json_data):
+  # This yields Python dicts, not JSON strings, so the caller has to do the json.dumps().
+  book = ContactBook()
+  book.indexable.add('gaia_ids')
+  emitted_contacts = set()
+  for convo in convos:
     for event in convo.events:
       recipients = []
       for participant in convo.participants:
         if participant.id != event.sender_id:
-          recipients.append(participant_to_contact(participant, contacts))
+          recipient = participant_to_contact(participant, book)
+          if recipient:
+            recipients.append(recipient)
       sender_participant = convo.participants.get_by_id(event.sender_id)
-      sender = participant_to_contact(sender_participant, contacts)
-      yield HangoutsEvent(
-        stream=event.type,
-        format='hangouts',
-        start=event.timestamp,
-        subtype=event.type,
-        sender=sender,
-        recipients=recipients,
-        message=event.get_formatted_message(),
-        raw={'conversation':convo, 'event':event}
-      )
+      sender = participant_to_contact(sender_participant, book)
+      event = {
+        'stream': event.type,
+        'format': 'hangouts',
+        'start': event.timestamp,
+        'sender':sender.id,
+        'recipients':[recip.id for recip in recipients],
+        'message':event.get_formatted_message(),
+      }
+      #TODO: Yield contacts when they're updated with new info, too.
+      contacts_to_emit = [sender]+recipients
+      for contact in contacts_to_emit:
+        if contact.id not in emitted_contacts:
+          yield contact.to_dict(stream='contact', format='hangouts')
+          emitted_contacts.add(contact.id)
+      yield event
 
 
-def participant_to_contact(participant, contacts=None):
+def participant_to_contact(participant, book):
   if participant is None:
-    return None
+    raise ValueError(f'No participant!')
   name = participant.name
   phone = Contact.normalize_phone(participant.phone)
   gaia_id = participant.gaia_id
-  if contacts is None:
-    contact = Contact(name=name, phone=phone, gaia_id=gaia_id)
-    contact['gaia_id'].indexable = True
-    return contact
+  # Check if the contact already exists.
+  # First, try looking it up by name:
+  name_results = book.get_all('names', name)
+  for result in name_results:
+    # If we found results, add the phone number and gaia_id.
+    if phone and phone not in result['phones']:
+      result['phones'].add(phone)
+    if gaia_id and gaia_id not in result['gaia_ids']:
+      result['gaia_ids'].add(gaia_id)
+  # Then try looking up by phone number:
+  phone_results = book.get_all('phones', phone)
+  for result in phone_results:
+    # If we found results, add the name and gaia_id.
+    if name and not result.name:
+      result.name = name
+    if gaia_id and gaia_id not in result['gaia_ids']:
+      result['gaia_ids'].add(gaia_id)
+  # Finally, try looking up by gaia_id:
+  gaia_results = book.get_all('gaia_ids', gaia_id)
+  for result in gaia_results:
+    # If we found results, add the name and phone number.
+    if name and not result.name:
+      result.name = name
+    if phone and phone not in result['phones']:
+      result['phones'].add(phone)
+  # Return the first name result, first gaia result, first phone result, or if no hits,
+  # make and add a new Contact.
+  if name_results:
+    return name_results[0]
+  elif gaia_results:
+    return gaia_results[0]
+  elif phone_results:
+    return phone_results[0]
   else:
-    # Check if the contact already exists.
-    # First, try looking it up by name:
-    name_results = contacts.getAll('name', name)
-    for result in name_results:
-      # If we found results, add the phone number and gaia_id.
-      if phone and not result['phones'].find(phone):
-        result['phones'].append(phone)
-      if gaia_id and not result.get('gaia_id') == gaia_id:
-        result['gaia_id'] = gaia_id
-        result['gaia_id'].indexable = True
-    # Then try looking up by phone number:
-    phone_results = contacts.getAll('phones', phone)
-    for result in phone_results:
-      # If we found results, add the name and gaia_id.
-      if name and not result.name:
-        result.name = name
-      if gaia_id and not result.get('gaia_id'):
-        result['gaia_id'] = gaia_id
-        result['gaia_id'].indexable = True
-    # Finally, try looking up by gaia_id:
-    gaia_results = contacts.getAll('gaia_id', gaia_id)
-    for result in gaia_results:
-      # If we found results, add the name and phone number.
-      if name and not result.name:
-        result.name = name
-      if phone and not result['phones'].find(phone):
-        result['phones'].append(phone)
-    # Return the first name result, first gaia result, first phone result, or if no hits,
-    # make and add a new Contact.
-    if name_results:
-      return name_results[0]
-    elif gaia_results:
-      return gaia_results[0]
-    elif phone_results:
-      return phone_results[0]
-    else:
-      contact = Contact(name=name, phone=phone, gaia_id=gaia_id)
-      contact['gaia_id'].indexable = True
-      contacts.add(contact)
-      return contact
+    contact = Contact(name=name, phone=phone, gaia_id=gaia_id)
+    book.add(contact)
+    return contact
 
 
 ##### Parsing code #####
@@ -314,22 +294,34 @@ def read_hangouts(json_data, convo_id=None):
   """Parses the json file.
   A generator that yields conversations."""
   logging.info("Analyzing json file ...")
-  for convo in json_data["conversation_state"]:
-    convo = _extract_convo_data(convo)
+  if "conversation_state" in json_data:
+    jconvos = json_data["conversation_state"]
+  else:
+    jconvos = json_data["conversations"]
+  for meta_convo in jconvos:
+    if "conversation_state" in meta_convo:
+      jconvo = meta_convo["conversation_state"]
+      jevents = meta_convo["conversation_state"]["event"]
+    else:
+      jconvo = meta_convo["conversation"]
+      jevents = meta_convo["events"]
+    convo = _extract_convo_data(jconvo, jevents)
     if convo_id is None or convo.id == convo_id:
       yield convo
 
 
-def _extract_convo_data(convo):
+def _extract_convo_data(convo, events):
   """Extracts the data that belongs to a single conversation.
   @return Conversation object"""
   try:
     # note the initial timestamp of this conversation
     convo_id = convo["conversation_id"]["id"]
 
-    # find out the participants
+    # Find out the participants.
+    # Note: It seems sometimes not everyone is included. I've seen situations where the sender of
+    # a message isn't listed in the participant_data for the same conversation.
     participant_list = ParticipantList()
-    for participant in convo["conversation_state"]["conversation"]["participant_data"]:
+    for participant in convo["conversation"]["participant_data"]:
       gaia_id = participant["id"]["gaia_id"]
       chat_id = participant["id"]["chat_id"]
       try:
@@ -346,7 +338,7 @@ def _extract_convo_data(convo):
 
     start_time = None
     end_time = None
-    for event in convo["conversation_state"]["event"]:
+    for event in events:
       event_id = event["event_id"]
       sender_id = event["sender_id"]  # has dict values "gaia_id" and "chat_id"
       # Process the timestamp.
@@ -394,8 +386,11 @@ def _extract_convo_data(convo):
           for attachment in message_content["attachment"]:
             # Note: This does not currently catch all attachments. It only gets Google photos
             # and videos (and even then, it doesn't get a url you can download the video from).
-            if attachment["embed_item"]["type"][0].lower() == "PLUS_PHOTO".lower():
-              media = attachment["embed_item"]["embeds.PlusPhoto.plus_photo"]
+            if attachment["embed_item"]["type"][0].upper() == "PLUS_PHOTO":
+              if "embeds.PlusPhoto.plus_photo" in attachment["embed_item"]:
+                media = attachment["embed_item"]["embeds.PlusPhoto.plus_photo"]
+              else:
+                media = attachment["embed_item"]["plus_photo"]
               if media['media_type'] == 'VIDEO':
                 # Video urls seem to lead to a series of redirects that won't work if you're not
                 # logged into Google.
@@ -409,8 +404,12 @@ def _extract_convo_data(convo):
           pass  # may happen when there is no (compatible) attachment
       except KeyError:
         continue  # that's okay
-      event_obj = Event(event_id, sender_id["gaia_id"], timestamp, text, links=links,
-                        attachments=attachments, type=event_type)
+      sender_gaia = sender_id['gaia_id']
+      if not participant_list.get_by_id(sender_gaia):
+        participant_list.add(Participant(sender_gaia, None, None, None))
+      event_obj = Event(
+        event_id, sender_gaia, timestamp, text, links=links, attachments=attachments, type=event_type
+      )
       event_list.add(event_obj)
   except KeyError:
     raise RuntimeError("The conversation data could not be extracted.")
@@ -432,6 +431,11 @@ def make_argparser():
   parser.add_argument('logfile',
     help='filename of the Hangouts log file. Can be a raw or gzipped .json file, or a zip/tarball '
          'exported by Google.')
+  parser.add_argument('-j', '--json', dest='format', default='human', const='json',
+    action='store_const',
+    help='Print the output in the Driver API JSON format.')
+  parser.add_argument('-J', '--json-array', action='store_true',
+    help='When using --json, add commas and brackets to make the entire output a JSON array.')
   parser.add_argument('-S', '--no-sort', dest='sort', action='store_false', default=True)
   parser.add_argument('-l', '--list', action='store_true',
     help='Just print the list of conversations, not their full contents. Prints one line per '
@@ -480,6 +484,20 @@ def main(argv):
   json_data = extract_data(args.logfile, 'Takeout/Hangouts/Hangouts.json', transform='json')
   if json_data is None:
     return 1
+
+  if args.format == 'json':
+    if args.json_array:
+      print('[')
+    first = True
+    for obj in get_events(read_hangouts(json_data)):
+      if first:
+        first = False
+      elif args.json_array:
+        print(',', end='')
+      print(json.dumps(obj))
+    if args.json_array:
+      print(']')
+    return
 
   all_convos = read_hangouts(json_data, convo_id=args.convo_id)
   if args.sort:

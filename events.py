@@ -1,60 +1,102 @@
 from datetime import datetime
+import logging
+log = logging.getLogger(__name__)
 
-class Event(object):
 
-  def __init__(self, stream, format, start, end=None, raw=None, **optionals):
-    # stream: 'sms', 'call', 'chat', 'location', 'photo', etc
-    # format: 'hangouts', 'voice', 'mytracks', 'geotracker', etc
+def parse_event(event, book):
+  stream = event['stream']
+  if stream == 'chat' or stream == 'sms':
+    return MessageEvent.from_dict(event, book)
+  elif stream == 'call':
+    return CallEvent.from_dict(event, book)
+  else:
+    raise NotImplementedError(f'Cannot parse {stream!r} streams.')
+
+
+class Event:
+
+  def __init__(self, stream, format, start):
+    # The type of event ('sms', 'call', 'chat', 'location', 'photo', etc).
     self.stream = stream
+    # The format it originated from ('hangouts', 'voice', 'mytracks', 'geotracker', etc).
     self.format = format
+    # Unix timestamp of the event start.
     self.start = start
-    self.end = end
-    if raw is None:
-      self.raw = {}
-    else:
-      self.raw = raw
 
-  def _generic_eq(self, other):
-    if not isinstance(other, Event):
+  def update_contacts(self, book):
+    """Incorporate data from a `ContactBook` into the `Contact`s associated with this `Event`.
+    If any `Contact` has a match in the `ContactBook`, replace it with the one in the book and
+    add its data to the book version.
+    This version is a stub.
+    It's just here so that child objects can rely on their parent having this method."""
+    pass
+
+  def __eq__(self, other):
+    if type(self) != type(other):
       return False
     elif self.start != other.start:
-      return False
-    elif type(self) != type(other):
       return False
     elif self.stream != other.stream:
       return False
     elif self.format != other.format:
       return False
-    elif self.end != other.end:
+    else:
+      return True
+
+
+class CommunicationEvent(Event):
+  """Abstract parent class for any type of contact from one person to one or several others."""
+
+  def __init__(self, stream, format, start, sender, recipients):
+    super().__init__(stream, format, start)
+    self.sender = sender
+    self.recipients = recipients
+
+  def __eq__(self, other):
+    if not super().__eq__(other):
+      return False
+    #TODO: Is this test appropriate for Contacts? Verify that if the same event is parsed from two
+    #      different files, it'll end up with the same Contacts, after deduplication via ContactBook.
+    elif self.sender != other.sender:
+      return False
+    elif sorted(self.recipients) != sorted(other.recipients):
       return False
     else:
       return True
 
-  def __eq__(self, other):
-    if not self._generic_eq(other):
-      return False
-    if self.raw != other.raw:
-      return False
-    for attr in dir(self):
-      if attr.startswith('_'):
-        continue
-      if not hasattr(other, attr):
-        return False
-      if getattr(self, attr) != getattr(other, attr):
-        return False
-    return True
+  def update_contacts(self, book):
+    super().update_contacts(book)
+    self.sender = book.replace_and_update(self.sender)
+    self.recipients = [book.replace_and_update(recipient) for recipient in self.recipients]
+
+  @staticmethod
+  def ids_to_contacts(ids, book):
+    return [book.get_by_id(id_) for id_ in ids]
 
 
-class MessageEvent(Event):
+class MessageEvent(CommunicationEvent):
   """Messages like SMS, chats, etc."""
-  def __init__(self, stream, format, start, sender, recipients, message, echo=False, raw=None):
-    super().__init__(stream, format, start, raw=raw)
-    self.sender = sender
-    self.recipients = recipients
+
+  def __init__(self, stream, format, start, sender, recipients, message, echo=False):
+    super().__init__(stream, format, start, sender, recipients)
     self.message = message
     # If this is a message from myself to myself, it will show up twice.
     # `echo` should be True if this is the 2nd appearance of the message.
     self.echo = echo
+
+  @classmethod
+  def from_dict(cls, data, book):
+    event = cls(
+      stream=data['stream'],
+      format=data['format'],
+      start=data['start'],
+      sender=book.get_by_id(data['sender']),
+      recipients=cls.ids_to_contacts(data['recipients'], book),
+      message=data['message']
+    )
+    if 'echo' in data:
+      event.echo = data['echo']
+    return event
 
   def __str__(self):
     time_str = datetime.fromtimestamp(self.start).strftime('%H:%M:%S')
@@ -65,73 +107,91 @@ class MessageEvent(Event):
     recipients_str = ', '.join(map(str, self.recipients[:4]))
     if len(self.recipients) > 4:
       recipients_str += ', and {} others'.format(len(self.recipients)-4)
-    return '{start}{type} {sender} -> {recipients}: {message}'.format(
-      start=time_str,
-      type=stream_str,
-      sender=self.sender,
-      recipients=recipients_str,
-      message=self.message
-    )
+    return f'{time_str}{stream_str} {self.sender} -> {recipients_str}: {self.message}'
 
   def __eq__(self, other):
-    if not self._generic_eq(other):
+    if not super().__eq__(other):
       return False
-    if self.message != other.message:
+    elif self.message != other.message:
       return False
-    if self.echo != other.echo:
+    elif self.echo != other.echo:
       return False
-    #TODO: Is this test appropriate for Contacts? Verify that if the same event is parsed from two
-    #      different files, it'll end up with the same Contacts, after deduplication via ContactBook.
-    if self.sender != other.sender:
-      return False
-    if sorted(self.recipients) != sorted(other.recipients):
-      return False
-    return True
+    else:
+      return True
 
 
-class CallEvent(Event):
+class CallEvent(CommunicationEvent):
+
   """Phone calls, voicemails, video chats, etc."""
-  def __init__(self, stream, format, start, end, subtype, sender, recipients, raw=None):
-    super().__init__(stream, format, start, end=end, raw=raw)
+  def __init__(self, stream, format, start, end, subtype, sender, recipients):
+    super().__init__(stream, format, start, sender, recipients)
+    self.end = end
+    # subtype examples: "received", "voicemail", "missed"
     self.subtype = subtype
-    self.sender = sender
-    self.recipients = recipients
+
+  @property
+  def duration(self):
+    return self.end-self.start
 
   def __str__(self):
+    time_str = datetime.fromtimestamp(self.start).strftime('%H:%M:%S')
     if self.subtype == 'missed':
       duration_str = ''
     else:
-      duration_str = ' for '+format_time(self.end-self.start)
-    return '{start} {type} {subtype}: {sender} -> {recipients}{duration}'.format(
-      start=datetime.fromtimestamp(self.start).strftime('%H:%M:%S'),
-      type=self.stream.capitalize(),
-      subtype=self.subtype.lower(),
-      sender=self.sender,
-      recipients=', '.join(map(str, self.recipients)),
-      duration=duration_str
+      duration_str = ' for '+format_time(self.duration)
+    recipients_str = ', '.join(map(str, self.recipients[:4]))
+    if len(self.recipients) > 4:
+      recipients_str += ', and {} others'.format(len(self.recipients)-4)
+    return (
+      f'{time_str} {self.stream.capitalize()} {self.subtype.lower()}: {self.sender} -> '
+      f'{recipients_str}{duration_str}'
+    )
+
+  @classmethod
+  def from_dict(cls, data, book):
+    return cls(
+      stream=data['stream'],
+      format=data['format'],
+      start=data['start'],
+      end=data['end'],
+      subtype=data['subtype'],
+      sender=book.get_by_id(data['sender']),
+      recipients=cls.ids_to_contacts(data['recipients'], book),
     )
 
   def __eq__(self, other):
-    if not self._generic_eq(other):
+    if not super().__eq__(other):
       return False
-    if self.subtype != other.subtype:
+    elif self.end != other.end:
       return False
-    #TODO: Is this test appropriate for Contacts? Verify that if the same event is parsed from two
-    #      different files, it'll end up with the same Contacts, after deduplication via ContactBook.
-    if self.sender != other.sender:
+    elif self.subtype != other.subtype:
       return False
-    if sorted(self.recipients) != sorted(other.recipients):
-      return False
-    return True
+    else:
+      return True
 
 
 class LocationEvent(Event):
 
-  def __init__(self, stream, format, start, lat, long, accuracy, raw=None):
+  def __init__(self, stream, format, start, nw_lat, nw_lon, accuracy, raw=None):
     super().__init__(stream, format, start, raw=raw)
-    self.lat = lat
-    self.long = long
+    self.lat = self.nw_lat = nw_lat
+    self.lon = self.nw_lon = nw_lon
     self.accuracy = accuracy
+
+  #TODO: __eq__()
+
+
+class LocationTrackEvent(Event):
+
+  def __init__(self, stream, format, start, end, nw_lat, nw_lon, se_lat, se_lon, track, raw=None):
+    super().__init__(stream, format, start, end=end, raw=raw)
+    self.nw_lat = nw_lat
+    self.nw_lon = nw_lon
+    self.se_lat = se_lat
+    self.se_lon = se_lon
+    self.track = track
+
+  #TODO: __eq__()
 
 
 def format_time(total_seconds):

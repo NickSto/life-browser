@@ -2,5 +2,7 @@
 *.bak
 *.sublime-project
 *.sublime-workspace
+*.xml
+*.sqlite3
 .venv
 __pycache__

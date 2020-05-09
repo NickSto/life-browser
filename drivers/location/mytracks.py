@@ -13,6 +13,46 @@ import xml.dom.minidom
 import dateutil.parser
 import yaml
 import kml
+try:
+  from events import LocationEvent
+except ImportError:
+  root = pathlib.Path(__file__).resolve().parent.parent.parent
+  sys.path.insert(0, str(root))
+  from events import LocationEvent
+from events import LocationTrackEvent
+
+
+########## Driver interface ##########
+
+METADATA = {
+  'human': {
+    'name': 'My Tracks',
+    'path': 'a directory containing .kml and/or .kmz files exported from My Tracks or Geo Tracker.'
+  },
+  'format': {
+    'path_type': 'either',
+  }
+}
+
+
+class MyTracksTrack(LocationTrackEvent):
+  def __init__(self, stream, format, start, end, nw_lat, nw_lon, se_lat, se_lon, track, title,
+               description, people, distance, raw=None):
+    super().__init__(stream, format, start, nw_lat, nw_lon, se_lat, se_lon, track, end=end, raw=raw)
+    self.title = title
+    self.description = description
+    self.people = people
+    self.distance = distance
+
+
+class MyTracksMarker(LocationEvent):
+  def __init__(self, stream, format, start, nw_lat, nw_lon, accuracy, name, description, raw=None):
+    super().__init__(stream, format, start, nw_lat, nw_lon, accuracy, raw=raw)
+    self.name = name
+    self.description = description
+
+
+########## Parsing ##########
 
 
 def parse(kml_root, parse_track=True):
@@ -517,6 +557,10 @@ def format_summary(meta, markers, track, ref_points=None):
     distance = None
   else:
     distance = '{:0.2f}mi'.format(meta['distance']*MI_PER_KM)
+  if track:
+    track_len = len(track)
+  else:
+    track_len = 0
   reflines = ''
   if ref_points:
     start_dist, start_name, start_area = find_closest_ref_point(meta['start_lat'], meta['start_lon'],
@@ -539,10 +583,10 @@ def format_summary(meta, markers, track, ref_points=None):
   return """title:\t{title}{}
 dialect:\t{dialect}
 duration:\t{}
-distance:\t{}{}
+distance:\t{} ({} points){}
 markers:\t{}
 description:
-{description}""".format(dateline, duration, distance, reflines, len(markers), **meta)
+{description}""".format(dateline, duration, distance, track_len, reflines, len(markers), **meta)
 
 
 def fail(message):
